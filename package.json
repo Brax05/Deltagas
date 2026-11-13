@@ -1,0 +1,36 @@
+{
+  "name": "deltagas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aplicación web de apoyo al cálculo de redes interiores de gas en baja presión según DS 66 (Chile)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.1",
+    "lucide-react": "^0.475.0",
+    "next": "^15.3.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.12",
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.22.0",
+    "eslint-config-next": "^15.3.2",
+    "tailwindcss": "^4.0.12",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}

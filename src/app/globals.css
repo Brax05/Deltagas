@@ -1,0 +1,233 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+
+  /* 1. Papel técnico frío (85% Neutros sin blanco puro #FFFFFF) */
+  --bg-app: #eef2f6;
+  --bg-surface: #f8fafc;
+  --bg-secondary: #e2e8f0;
+  --bg-control: #f1f5f9;
+  --bg-control-hover: #e2e8f0;
+  --bg-brand-mark: #0f172a;
+  --border-base: #cbd5e1;
+  --border-subtle: #dce3ec;
+  --border-control: #94a3b8;
+
+  /* 2. Tipografía (Alto contraste) */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-control: #334155;
+  --text-muted: #64748b;
+
+  /* 3. Color de acción e interfaz (10% Acento único) */
+  --accent-primary: #1e40af;
+  --accent-primary-hover: #1e3a8a;
+  --accent-primary-text: #f8fafc;
+  --accent-link: #1e40af;
+  --accent-copper: #b45309;
+  --accent-copper-border: rgba(180, 83, 9, 0.35);
+  --accent-copper-bg: rgba(180, 83, 9, 0.08);
+
+  /* 4. Colores semánticos y de validación normativa (5%) */
+  --status-ok-bg: #dcfce7;
+  --status-ok-border: #86efac;
+  --status-ok-text: #15803d;
+
+  --status-error-bg: #fee2e2;
+  --status-error-border: #fca5a5;
+  --status-error-text: #b91c1c;
+
+  --status-warn-bg: #fef3c7;
+  --status-warn-border: #fde68a;
+  --status-warn-text: #b45309;
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* 1. Pizarra nocturna (Modo oscuro legible) */
+  --bg-app: #090d16;
+  --bg-surface: #111827;
+  --bg-secondary: #1e293b;
+  --bg-control: #0f172a;
+  --bg-control-hover: #1e293b;
+  --bg-brand-mark: #1e293b;
+  --border-base: #1e293b;
+  --border-subtle: #1a2332;
+  --border-control: #334155;
+
+  /* 2. Tipografía nocturna */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-control: #cbd5e1;
+  --text-muted: #64748b;
+
+  /* 3. Acción e interfaz nocturna */
+  --accent-primary: #2563eb;
+  --accent-primary-hover: #1d4ed8;
+  --accent-primary-text: #f8fafc;
+  --accent-link: #60a5fa;
+  --accent-copper: #d97706;
+  --accent-copper-border: rgba(217, 119, 6, 0.42);
+  --accent-copper-bg: rgba(217, 119, 6, 0.14);
+
+  /* 4. Semánticos nocturnos sobrios */
+  --status-ok-bg: #052e16;
+  --status-ok-border: #166534;
+  --status-ok-text: #4ade80;
+
+  --status-error-bg: #450a0a;
+  --status-error-border: #991b1b;
+  --status-error-text: #f87171;
+
+  --status-warn-bg: #451a03;
+  --status-warn-border: #92400e;
+  --status-warn-text: #fbbf24;
+}
+
+@theme inline {
+  --color-pizarra-app: var(--bg-app);
+  --color-pizarra-surface: var(--bg-surface);
+  --color-pizarra-secondary: var(--bg-secondary);
+  --color-pizarra-control: var(--bg-control);
+  --color-pizarra-control-hover: var(--bg-control-hover);
+  --color-pizarra-brand: var(--bg-brand-mark);
+  --color-pizarra-border: var(--border-base);
+  --color-pizarra-subtle: var(--border-subtle);
+  --color-pizarra-border-control: var(--border-control);
+
+  --color-pizarra-text: var(--text-primary);
+  --color-pizarra-subtext: var(--text-secondary);
+  --color-pizarra-text-control: var(--text-control);
+  --color-pizarra-muted: var(--text-muted);
+
+  --color-pizarra-action: var(--accent-primary);
+  --color-pizarra-action-hover: var(--accent-primary-hover);
+  --color-pizarra-action-text: var(--accent-primary-text);
+  --color-pizarra-link: var(--accent-link);
+  --color-pizarra-copper: var(--accent-copper);
+  --color-pizarra-copper-border: var(--accent-copper-border);
+  --color-pizarra-copper-bg: var(--accent-copper-bg);
+
+  --color-status-ok-bg: var(--status-ok-bg);
+  --color-status-ok-border: var(--status-ok-border);
+  --color-status-ok-text: var(--status-ok-text);
+
+  --color-status-error-bg: var(--status-error-bg);
+  --color-status-error-border: var(--status-error-border);
+  --color-status-error-text: var(--status-error-text);
+
+  --color-status-warn-bg: var(--status-warn-bg);
+  --color-status-warn-border: var(--status-warn-border);
+  --color-status-warn-text: var(--status-warn-text);
+}
+
+@layer base {
+  body {
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    background-color: var(--bg-control);
+    color: var(--text-primary);
+    border-color: var(--border-control);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--text-muted);
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+  }
+}
+
+@keyframes recintoBlinkError {
+  0%,
+  100% {
+    stroke: var(--status-error-text);
+    fill: var(--status-error-bg);
+    fill-opacity: 0.65;
+    stroke-width: 2.5px;
+  }
+  50% {
+    stroke: var(--status-error-border);
+    fill: var(--status-error-text);
+    fill-opacity: 0.22;
+    stroke-width: 1.5px;
+  }
+}
+
+.animate-recinto-error {
+  animation: recintoBlinkError 1.05s ease-in-out infinite;
+}
+
+@keyframes badgeBlinkError {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.animate-badge-error {
+  animation: badgeBlinkError 1.05s ease-in-out infinite;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .animate-recinto-error,
+  .animate-badge-error {
+    animation: none !important;
+  }
+
+  :root,
+  .dark {
+    color-scheme: light;
+    --bg-app: #ffffff;
+    --bg-surface: #ffffff;
+    --bg-secondary: #f1f5f9;
+    --bg-control: #ffffff;
+    --border-base: #cbd5e1;
+    --border-subtle: #e2e8f0;
+    --border-control: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-control: #334155;
+    --text-muted: #64748b;
+    --accent-primary: #1e40af;
+    --accent-link: #1e40af;
+    --accent-copper: #b45309;
+    --status-ok-bg: #dcfce7;
+    --status-ok-border: #86efac;
+    --status-ok-text: #15803d;
+    --status-error-bg: #fee2e2;
+    --status-error-border: #fca5a5;
+    --status-error-text: #b91c1c;
+    --status-warn-bg: #fef3c7;
+    --status-warn-border: #fde68a;
+    --status-warn-text: #b45309;
+  }
+
+  body {
+    background: #ffffff;
+  }
+}
