@@ -102,6 +102,67 @@ export function directionLabelEs(dir: Direction): string {
   }
 }
 
+/**
+ * Ajusta un desplazamiento 2D (dx, dy en metros) a la dirección válida más cercana
+ * (cardinal o diagonal) y cuantiza la distancia proyectada en saltos exactos de stepCm (10 cm).
+ */
+export function snapVectorToDirectionAndStepCm(params: {
+  dxMeters: number;
+  dyMeters: number;
+  stepCm?: number;
+  minCm?: number;
+  fallbackDirection?: Direction;
+}): { direction: Direction; lengthCm: number } {
+  const {
+    dxMeters,
+    dyMeters,
+    stepCm = 10,
+    minCm = 10,
+    fallbackDirection = "right",
+  } = params;
+
+  const distMeters = Math.hypot(dxMeters, dyMeters);
+  if (!Number.isFinite(distMeters) || distMeters < 0.03) {
+    return { direction: fallbackDirection, lengthCm: minCm };
+  }
+
+  let bestDirection: Direction = fallbackDirection;
+  let bestDot = -Infinity;
+  for (const dir of ALL_DIRECTIONS) {
+    const vec = directionVector(dir);
+    const dot = dxMeters * vec.dx + dyMeters * vec.dy;
+    if (dot > bestDot) {
+      bestDot = dot;
+      bestDirection = dir;
+    }
+  }
+
+  const safeStep = Math.max(1, stepCm);
+  const snappedCm = Math.round((bestDot * 100) / safeStep) * safeStep;
+  return {
+    direction: bestDirection,
+    lengthCm: Math.max(minCm, snappedCm),
+  };
+}
+
+/**
+ * Parsea medidas decimales aceptando coma o punto (ej. "1,5" o "1.5").
+ */
+export function parseDecimalMeters(
+  raw: string,
+  minMeters = 0,
+  maxMeters = 50
+): number | null {
+  const normalized = raw.replace(",", ".").trim();
+  if (!normalized || normalized === ".") return null;
+  if (!/^\d*(?:\.\d*)?$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < minMeters || parsed > maxMeters) {
+    return null;
+  }
+  return parsed;
+}
+
 export function computeDiagramLayout(segments: Segment[]): DiagramLayout {
   const points: Record<string, Point> = {
     S: { id: "S", label: "S", isRegulator: true, xMeters: 0, yMeters: 0 },

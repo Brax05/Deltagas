@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   GitBranch,
   Calculator,
   DoorOpen,
   FilePlus2,
+  BookOpen,
+  ChevronDown,
   CheckCircle2,
   AlertTriangle,
 } from "lucide-react";
@@ -21,7 +23,6 @@ import {
   createInitialHistory,
   applyAddSegment,
   applyUpdateSegmentParts,
-  applyAdjustLastPartLengthCm,
   applyAddSegmentBend,
   applyChangeSegmentDiameter,
   applyDeleteSegmentWithSubtree,
@@ -31,7 +32,7 @@ import {
   getNextSegmentId,
   type NetworkHistoryState,
 } from "@/domain/diagram";
-import { createExamReferenceProject } from "@/domain/fixtures/exam-reference";
+import { DIAGRAM_EXAMPLES } from "@/domain/fixtures/examples";
 import {
   createEmptyProject,
   loadDraftProject,
@@ -65,16 +66,16 @@ interface WorkspaceState {
 }
 
 function buildInitialWorkspace(): WorkspaceState {
-  const initialExample = createExamReferenceProject();
+  const initialEmpty = createEmptyProject({ deterministic: true });
   return {
     hydrated: false,
     viewResetKey: 0,
-    project: initialExample,
+    project: initialEmpty,
     history: createInitialHistory({
-      segments: initialExample.segments,
-      appliances: initialExample.appliances,
+      segments: initialEmpty.segments,
+      appliances: initialEmpty.appliances,
     }),
-    selectedSegmentId: initialExample.segments[0]?.id ?? null,
+    selectedSegmentId: null,
     selectedPointId: null,
   };
 }
@@ -82,6 +83,8 @@ function buildInitialWorkspace(): WorkspaceState {
 export function GasWorkspace() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("red");
   const [workspace, setWorkspace] = useState<WorkspaceState>(buildInitialWorkspace);
+  const [examplesMenuOpen, setExamplesMenuOpen] = useState(false);
+  const examplesMenuRef = useRef<HTMLDivElement | null>(null);
 
   const { hydrated, viewResetKey, project, history, selectedSegmentId, selectedPointId } =
     workspace;
@@ -105,6 +108,27 @@ export function GasWorkspace() {
     if (!hydrated) return;
     saveDraftProject(project);
   }, [project, hydrated]);
+
+  useEffect(() => {
+    if (!examplesMenuOpen) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (
+        examplesMenuRef.current &&
+        !examplesMenuRef.current.contains(e.target as Node)
+      ) {
+        setExamplesMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExamplesMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [examplesMenuOpen]);
 
   const updateProject = (updater: (prev: ProjectData) => ProjectData) => {
     setWorkspace((prev) => ({
@@ -248,29 +272,84 @@ export function GasWorkspace() {
     });
   };
 
-  const handleQuickAddFromPoint = (
-    fromPointId: string,
-    direction: Direction
-  ) => {
+  const handleQuickAddFromPoint = (params: {
+    fromPointId: string;
+    direction: Direction;
+    lengthCm: number;
+    nominalDiameter: CopperNominalDiameter;
+    appliance?: {
+      catalogId: string;
+      name: string;
+      applianceClass: Appliance["applianceClass"];
+      circuitType: Appliance["circuitType"];
+      powerMcalPerHour: number;
+      roomLengthMeters: number;
+      roomWidthMeters: number;
+      roomHeightMeters: number;
+    };
+  }) => {
     setWorkspace((prev) => {
       const segId = getNextSegmentId(prev.history.present.segments);
       const toPointId = getNextPointLabel(prev.history.present.segments);
       const newSeg: Segment = {
         id: segId,
-        fromPointId,
+        fromPointId: params.fromPointId,
         toPointId,
-        parts: [{ direction, lengthCm: 400 }],
-        nominalDiameter: "1/2",
+        parts: [
+          {
+            direction: params.direction,
+            lengthCm: Math.max(10, Math.round(params.lengthCm / 10) * 10),
+          },
+        ],
+        nominalDiameter: params.nominalDiameter,
       };
-      const nextHistory = applyAddSegment(prev.history, newSeg);
-      if (nextHistory.lastRejectionReason !== null) {
-        return { ...prev, history: nextHistory };
+      const nextBase = applyAddSegment(prev.history, newSeg);
+      if (nextBase.lastRejectionReason !== null) {
+        return { ...prev, history: nextBase };
       }
+
+      let nextRooms = prev.project.rooms;
+      let nextHistory = nextBase;
+
+      if (params.appliance) {
+        const roomId = `recinto-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+        const newRoom: Room = {
+          id: roomId,
+          name: `Recinto ${toPointId}`,
+          lengthMeters: params.appliance.roomLengthMeters,
+          widthMeters: params.appliance.roomWidthMeters,
+          heightMeters: params.appliance.roomHeightMeters,
+          ventilationType: "directa",
+        };
+        nextRooms = [...prev.project.rooms, newRoom];
+        nextHistory = {
+          ...nextBase,
+          present: {
+            ...nextBase.present,
+            appliances: [
+              ...nextBase.present.appliances,
+              {
+                id: `app-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                name: params.appliance.name,
+                segmentId: segId,
+                catalogId: params.appliance.catalogId,
+                applianceClass: params.appliance.applianceClass,
+                circuitType: params.appliance.circuitType,
+                powerMcalPerHour: params.appliance.powerMcalPerHour,
+                quantity: 1,
+                roomId,
+              },
+            ],
+          },
+        };
+      }
+
       return {
         ...prev,
         history: nextHistory,
         project: {
           ...prev.project,
+          rooms: nextRooms,
           segments: nextHistory.present.segments,
           appliances: nextHistory.present.appliances,
           updatedAt: new Date().toISOString(),
@@ -278,6 +357,22 @@ export function GasWorkspace() {
         selectedSegmentId: segId,
         selectedPointId: toPointId,
       };
+    });
+  };
+
+  const handleMoveSegmentLastPart = (
+    segmentId: string,
+    direction: Direction,
+    lengthCm: number
+  ) => {
+    const safeCm = Math.max(10, Math.round(lengthCm / 10) * 10);
+    commitHistory((prev) => {
+      const seg = prev.present.segments.find((s) => s.id === segmentId);
+      if (!seg || seg.parts.length === 0) return prev;
+      const nextParts = seg.parts.map((part, idx) =>
+        idx === seg.parts.length - 1 ? { direction, lengthCm: safeCm } : part
+      );
+      return applyUpdateSegmentParts(prev, segmentId, nextParts);
     });
   };
 
@@ -311,6 +406,36 @@ export function GasWorkspace() {
       present: {
         ...prev.present,
         appliances: [...prev.present.appliances, newApp],
+      },
+      future: [],
+      lastRejectionReason: null,
+      blockingSegmentId: null,
+    }));
+  };
+
+  const handleUpdateAppliance = (updated: Appliance) => {
+    commitHistory((prev) => ({
+      past: [...prev.past.slice(-39), prev.present],
+      present: {
+        ...prev.present,
+        appliances: prev.present.appliances.map((app) =>
+          app.id === updated.id ? updated : app
+        ),
+      },
+      future: [],
+      lastRejectionReason: null,
+      blockingSegmentId: null,
+    }));
+  };
+
+  const handleDeleteAppliance = (applianceId: string) => {
+    commitHistory((prev) => ({
+      past: [...prev.past.slice(-39), prev.present],
+      present: {
+        ...prev.present,
+        appliances: prev.present.appliances.filter(
+          (app) => app.id !== applianceId
+        ),
       },
       future: [],
       lastRejectionReason: null,
@@ -475,16 +600,20 @@ export function GasWorkspace() {
             </h1>
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                calculation.allCompliant &&
-                !calculation.hasOutOfRangeSegments &&
-                diagramValidation.valid
-                  ? "border-status-ok-border bg-status-ok-bg text-status-ok-text"
-                  : "border-status-error-border bg-status-error-bg text-status-error-text"
+                project.segments.length === 0
+                  ? "border-pizarra-border bg-pizarra-secondary text-pizarra-subtext"
+                  : calculation.allCompliant &&
+                      !calculation.hasOutOfRangeSegments &&
+                      diagramValidation.valid
+                    ? "border-status-ok-border bg-status-ok-bg text-status-ok-text"
+                    : "border-status-error-border bg-status-error-bg text-status-error-text"
               }`}
             >
-              {calculation.allCompliant &&
-              !calculation.hasOutOfRangeSegments &&
-              diagramValidation.valid ? (
+              {project.segments.length === 0 ? (
+                <>Listo para trazar</>
+              ) : calculation.allCompliant &&
+                !calculation.hasOutOfRangeSegments &&
+                diagramValidation.valid ? (
                 <>
                   <CheckCircle2 className="h-3 w-3 text-status-ok-text" />
                   Red cumple
@@ -505,9 +634,69 @@ export function GasWorkspace() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <div ref={examplesMenuRef} className="relative">
+            <button
+              type="button"
+              aria-expanded={examplesMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => setExamplesMenuOpen((open) => !open)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-pizarra-border-control bg-pizarra-control px-2.5 py-1.5 text-xs font-semibold text-pizarra-text-control transition-colors hover:bg-pizarra-control-hover"
+            >
+              <BookOpen className="h-3.5 w-3.5 text-pizarra-link" />
+              Diagramas de ejemplo
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${
+                  examplesMenuOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {examplesMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Diagramas de ejemplo disponibles"
+                className="absolute left-0 z-30 mt-1.5 w-80 max-w-[90vw] rounded-xl border border-pizarra-border bg-pizarra-surface p-2 shadow-md sm:right-0 sm:left-auto"
+              >
+                <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-pizarra-subtext">
+                  Cargar diagrama a escala real
+                </p>
+                <div className="mt-1 space-y-1">
+                  {DIAGRAM_EXAMPLES.map((example) => (
+                    <button
+                      key={example.id}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        handleLoadProject(example.createProject());
+                        setActiveTab("red");
+                        setExamplesMenuOpen(false);
+                      }}
+                      className="w-full rounded-lg border border-transparent p-2 text-left transition-colors hover:border-pizarra-border hover:bg-pizarra-secondary"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-pizarra-text">
+                          {example.title}
+                        </span>
+                        <span className="shrink-0 rounded border border-pizarra-border bg-pizarra-control px-1.5 py-0.5 text-[10px] font-semibold text-pizarra-link">
+                          {example.badge}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] leading-snug text-pizarra-subtext">
+                        {example.description}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
-            onClick={() => handleLoadProject(createEmptyProject())}
+            onClick={() => {
+              setExamplesMenuOpen(false);
+              handleLoadProject(createEmptyProject());
+            }}
             className="inline-flex items-center gap-1.5 rounded-lg border border-pizarra-border-control bg-pizarra-control px-2.5 py-1.5 text-xs font-semibold text-pizarra-text-control transition-colors hover:bg-pizarra-control-hover"
           >
             <FilePlus2 className="h-3.5 w-3.5" />
@@ -597,9 +786,6 @@ export function GasWorkspace() {
               canUndo={history.past.length > 0}
               canRedo={history.future.length > 0}
               viewResetKey={viewResetKey}
-              onLoadExamExample={() =>
-                handleLoadProject(createExamReferenceProject())
-              }
               onSelectSegment={(segId) => {
                 setWorkspace((prev) => {
                   const found = segId
@@ -614,11 +800,9 @@ export function GasWorkspace() {
               }}
               onSelectPoint={setSelectedPointId}
               onQuickAddFromPoint={handleQuickAddFromPoint}
-              onAdjustSegmentLengthCm={(segId, deltaCm) =>
-                commitHistory((prev) =>
-                  applyAdjustLastPartLengthCm(prev, segId, deltaCm)
-                )
-              }
+              onMoveSegmentLastPart={handleMoveSegmentLastPart}
+              onUpdateAppliance={handleUpdateAppliance}
+              onDeleteAppliance={handleDeleteAppliance}
               onUpdateRoom={handleUpdateRoom}
               onCreateAndAssignRoom={handleCreateAndAssignRoom}
               onAssignApplianceRoom={handleAssignApplianceRoom}
@@ -643,16 +827,8 @@ export function GasWorkspace() {
                   updatedAt: new Date().toISOString(),
                 }))
               }
-              onLoadExamExample={() =>
-                handleLoadProject(createExamReferenceProject())
-              }
               onSelectSegment={setSelectedSegmentId}
               onAddSegmentWithAppliance={handleAddSegmentWithAppliance}
-              onAdjustLengthCm={(segmentId, deltaCm) =>
-                commitHistory((prev) =>
-                  applyAdjustLastPartLengthCm(prev, segmentId, deltaCm)
-                )
-              }
               onSetSingleLengthCm={handleSetSingleLengthCm}
               onChangeDiameter={(segmentId, diameter) =>
                 commitHistory((prev) =>
@@ -665,6 +841,8 @@ export function GasWorkspace() {
                 )
               }
               onAddApplianceToSegment={handleAddApplianceToSegment}
+              onUpdateAppliance={handleUpdateAppliance}
+              onDeleteAppliance={handleDeleteAppliance}
               onDeleteSegmentWithSubtree={handleDeleteSegmentWithSubtree}
               onUpdateRoom={handleUpdateRoom}
               onCreateAndAssignRoom={handleCreateAndAssignRoom}

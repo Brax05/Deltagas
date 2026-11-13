@@ -2,7 +2,6 @@ import { ALL_DIRECTIONS } from "@/domain/diagram/geometry";
 import { GAS_SPECIFICATIONS } from "@/domain/ds66/gases";
 import { COPPER_PIPE_BY_NOMINAL } from "@/domain/ds66/pipes";
 import { DEFAULT_ROOM_HEIGHT_METERS } from "@/domain/ds66/rooms";
-import { createExamReferenceProject } from "@/domain/fixtures/exam-reference";
 import type {
   Appliance,
   CopperNominalDiameter,
@@ -16,7 +15,8 @@ import type {
 
 const VALID_DIRECTIONS = new Set<string>(ALL_DIRECTIONS);
 
-const DRAFT_PROJECT_KEY = "deltagas-ds66-draft-project-v1";
+const DRAFT_PROJECT_KEY = "deltagas-ds66-draft-project-v2";
+const PREVIOUS_DRAFT_PROJECT_KEY = "deltagas-ds66-draft-project-v1";
 const LEGACY_DRAFT_PROJECT_KEY = "redgas-ds66-draft-project-v1";
 const DRAFT_INSTALLER_KEY = "deltagas-ds66-installer-profile-v1";
 const LEGACY_DRAFT_INSTALLER_KEY = "redgas-ds66-installer-profile-v1";
@@ -33,9 +33,11 @@ export interface DailyChecklistDraft {
   updatedAt: string;
 }
 
-export function createEmptyProject(): ProjectData {
+export function createEmptyProject(options?: { deterministic?: boolean }): ProjectData {
+  const deterministic = options?.deterministic === true;
+  const isoNow = deterministic ? "2026-11-13T00:00:00.000Z" : new Date().toISOString();
   return {
-    id: `proyecto-${Date.now()}`,
+    id: deterministic ? "proyecto-nuevo" : `proyecto-${Date.now()}`,
     name: "Nuevo proyecto de red de gas (DS 66)",
     gasType: "GLP",
     client: {
@@ -57,7 +59,7 @@ export function createEmptyProject(): ProjectData {
       },
     ],
     hermeticity: {
-      date: new Date().toISOString().slice(0, 10),
+      date: isoNow.slice(0, 10),
       installationType: "nueva",
       initialPressureMbar: 50,
       finalPressureMbar: 50,
@@ -77,7 +79,7 @@ export function createEmptyProject(): ProjectData {
       consumptionMode: "intermitente",
       calculationMethod: "vaporizacion",
     },
-    updatedAt: new Date().toISOString(),
+    updatedAt: isoNow,
   };
 }
 
@@ -270,17 +272,47 @@ export function sanitizeProjectData(parsed: unknown): ProjectData | null {
   };
 }
 
-export function loadDraftProject(): ProjectData {
-  if (typeof window === "undefined") {
-    return createExamReferenceProject();
+export function resolveDraftProject(
+  raw: string | null,
+  options?: { fromLegacyStorage?: boolean }
+): ProjectData {
+  if (!raw) {
+    return createEmptyProject();
   }
   try {
-    const raw = readStorageWithLegacy(DRAFT_PROJECT_KEY, LEGACY_DRAFT_PROJECT_KEY);
-    if (!raw) return createExamReferenceProject();
     const parsed = JSON.parse(raw) as unknown;
-    return sanitizeProjectData(parsed) ?? createExamReferenceProject();
+    const sanitized = sanitizeProjectData(parsed);
+    if (!sanitized) {
+      return createEmptyProject();
+    }
+    // En almacenamiento v1 el ejemplo de examen (proyecto-examen-ds66) se cargaba
+    // automáticamente por defecto; al migrar a v2 se inicia vacío y el usuario
+    // puede volver a abrirlo desde "Diagramas de ejemplo".
+    if (options?.fromLegacyStorage && sanitized.id === "proyecto-examen-ds66") {
+      return createEmptyProject();
+    }
+    return sanitized;
   } catch {
-    return createExamReferenceProject();
+    return createEmptyProject();
+  }
+}
+
+export function loadDraftProject(): ProjectData {
+  if (typeof window === "undefined") {
+    return createEmptyProject({ deterministic: true });
+  }
+  try {
+    const currentRaw = window.localStorage.getItem(DRAFT_PROJECT_KEY);
+    if (currentRaw !== null) {
+      return resolveDraftProject(currentRaw);
+    }
+    const previousRaw = readStorageWithLegacy(
+      PREVIOUS_DRAFT_PROJECT_KEY,
+      LEGACY_DRAFT_PROJECT_KEY
+    );
+    return resolveDraftProject(previousRaw, { fromLegacyStorage: true });
+  } catch {
+    return createEmptyProject();
   }
 }
 

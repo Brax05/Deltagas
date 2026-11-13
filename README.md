@@ -18,7 +18,7 @@ Aplicación web de apoyo técnico para el cálculo hidráulico, trazado geométr
 - **Verificación de recintos, hermeticidad y cilindros GLP:**
   - Evaluación de volumen bruto mínimo (Tabla XX y fórmula `f.8` para estufas) y aberturas de ventilación (Tablas XXI y XXII).
   - Hoja referencial para prueba de hermeticidad (Art. 78.3.5) y cálculo de dotación de cilindros GLP (Tablas XVII y XVIII).
-- **Caso de referencia y respaldo local:** incluye el proyecto de referencia del examen DS 66 (Arica), guardado automático en navegador (`localStorage`) con saneamiento de borradores, además de rutas listas para integrar **Supabase** (Auth, Postgres con RLS y Storage).
+- **Diagramas de ejemplo y respaldo local:** inicia con un lienzo limpio listo para trazar y permite cargar desde **Diagramas de ejemplo** el **Ejemplo 1** (red GLP de 5 tramos y 39 Mcal/h) o el **Ejemplo 2** (caso de referencia del examen DS 66 - Arica), manteniendo guardado automático en navegador (`localStorage`) con saneamiento de borradores, además de rutas listas para integrar **Supabase** (Auth, Postgres con RLS y Storage).
 - **Sistema visual "Ingeniería Pizarra" + Modo Oscuro:** paleta sobria de alto contraste (neutros fríos en modo claro y pizarra nocturna en modo oscuro mediante el botón flotante inferior derecho).
 
 ---
@@ -44,8 +44,10 @@ Aplicación web de apoyo técnico para el cálculo hidráulico, trazado geométr
 │   │   └── page.tsx                  # Entrada principal de la aplicación
 │   ├── components/                   # Componentes de interfaz agrupados por dominio
 │   │   ├── diagram/
-│   │   │   └── NetworkDiagram.tsx    # Lienzo SVG a escala, zoom con rueda, paneo, colisiones y recintos 2D
+│   │   │   ├── NetworkDiagram.tsx    # Lienzo SVG a escala, zoom con rueda, paneo, arrastre y recintos 2D
+│   │   │   └── QuickAddSegmentBar.tsx # Barra rápida contextual para agregar tramos, artefactos y recintos
 │   │   ├── network/
+│   │   │   ├── ApplianceForm.tsx     # Formulario de creación/edición de artefactos con tabla DS 66
 │   │   │   └── NetworkPanel.tsx      # Editor de tramos, diámetros, largos, quiebres y artefactos
 │   │   ├── results/
 │   │   │   └── ResultsTab.tsx        # Tabla de memoria de cálculo, ruta crítica, cilindros y hermeticidad
@@ -79,7 +81,9 @@ Aplicación web de apoyo técnico para el cálculo hidráulico, trazado geométr
 │   │   │   ├── pressure-tables.ts    # Tablas 1/5 y fórmula de Pole modificada
 │   │   │   └── rooms.ts              # Tablas XX, XXI, XXII y altura por defecto de recintos
 │   │   ├── fixtures/
-│   │   │   └── exam-reference.ts     # Caso completo de referencia (Examen final DS 66 - Arica)
+│   │   │   ├── exam-reference.ts     # Ejemplo 2: caso completo de referencia (Examen DS 66 - Arica)
+│   │   │   ├── examples.ts           # Catálogo de diagramas de ejemplo cargables desde la UI
+│   │   │   └── module4-example.ts    # Ejemplo 1: red GLP de 5 tramos y 3 artefactos (39 Mcal/h)
 │   │   ├── validation/
 │   │   │   └── schemas.ts            # Esquemas Zod compartidos entre cliente y API
 │   │   └── types.ts                  # Tipos base del dominio (Point, Segment, Appliance, Room, ProjectData)

@@ -189,13 +189,30 @@
   animation: badgeBlinkError 1.05s ease-in-out infinite;
 }
 
+@keyframes segmentBlinkGreen {
+  0%,
+  100% {
+    stroke: var(--status-ok-text);
+    opacity: 1;
+  }
+  50% {
+    stroke: var(--status-ok-border);
+    opacity: 0.42;
+  }
+}
+
+.animate-segment-green {
+  animation: segmentBlinkGreen 0.72s ease-in-out infinite;
+}
+
 @media print {
   .no-print {
     display: none !important;
   }
 
   .animate-recinto-error,
-  .animate-badge-error {
+  .animate-badge-error,
+  .animate-segment-green {
     animation: none !important;
   }
 

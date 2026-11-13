@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Plus,
+  Pencil,
   Trash2,
   ArrowUp,
   ArrowDown,
@@ -17,7 +18,6 @@ import {
   CheckCircle2,
   XCircle,
 } from "lucide-react";
-import { APPLIANCE_CATALOG_TABLA_V } from "@/domain/ds66/appliances";
 import { GAS_SPECIFICATIONS } from "@/domain/ds66/gases";
 import { COPPER_TYPE_L_PIPES } from "@/domain/ds66/pipes";
 import type { NetworkCalculationResult } from "@/domain/calculations/network";
@@ -29,6 +29,7 @@ import {
   getNextSegmentId,
   getSubtreeImpact,
   directionLabelEs,
+  parseDecimalMeters,
 } from "@/domain/diagram";
 import type {
   Appliance,
@@ -38,6 +39,13 @@ import type {
   Room,
   Segment,
 } from "@/domain/types";
+import {
+  ApplianceForm,
+  applianceDraftToInput,
+  createApplianceDraftFromAppliance,
+  createDefaultApplianceDraft,
+  type ApplianceDraft,
+} from "@/components/network/ApplianceForm";
 import { RoomQuickEditor } from "@/components/rooms/RoomQuickEditor";
 
 interface NetworkPanelProps {
@@ -49,13 +57,11 @@ interface NetworkPanelProps {
   calculation: NetworkCalculationResult;
   selectedSegmentId: string | null;
   onChangeGasType: (gasType: GasConfigId) => void;
-  onLoadExamExample: () => void;
   onSelectSegment: (segmentId: string | null) => void;
   onAddSegmentWithAppliance: (params: {
     segment: Segment;
     appliance?: Omit<Appliance, "id" | "segmentId"> & { id?: string };
   }) => void;
-  onAdjustLengthCm: (segmentId: string, deltaCm: number) => void;
   onSetSingleLengthCm: (segmentId: string, partIndex: number, lengthCm: number) => void;
   onChangeDiameter: (segmentId: string, diameter: CopperNominalDiameter) => void;
   onAddBend: (segmentId: string, direction: Direction, lengthCm: number) => void;
@@ -63,6 +69,8 @@ interface NetworkPanelProps {
     segmentId: string,
     appliance: Omit<Appliance, "id" | "segmentId">
   ) => void;
+  onUpdateAppliance: (appliance: Appliance) => void;
+  onDeleteAppliance: (applianceId: string) => void;
   onUpdateRoom: (room: Room) => void;
   onCreateAndAssignRoom: (applianceId: string, room: Room) => void;
   onAssignApplianceRoom: (
@@ -81,14 +89,14 @@ export function NetworkPanel({
   calculation,
   selectedSegmentId,
   onChangeGasType,
-  onLoadExamExample,
   onSelectSegment,
   onAddSegmentWithAppliance,
-  onAdjustLengthCm,
   onSetSingleLengthCm,
   onChangeDiameter,
   onAddBend,
   onAddApplianceToSegment,
+  onUpdateAppliance,
+  onDeleteAppliance,
   onUpdateRoom,
   onCreateAndAssignRoom,
   onAssignApplianceRoom,
@@ -110,21 +118,39 @@ export function NetworkPanel({
     availableOriginPoints[availableOriginPoints.length - 1] ?? "S";
   const [fromPointId, setFromPointId] = useState<string>(defaultOrigin);
   const [direction, setDirection] = useState<Direction>("right");
-  const [lengthMeters, setLengthMeters] = useState<number>(6);
+  const [lengthMeters, setLengthMeters] = useState<number>(2);
+  const [lengthMetersStr, setLengthMetersStr] = useState<string>("2");
   const [lengthCmExtra, setLengthCmExtra] = useState<number>(0);
   const [diameter, setDiameter] = useState<CopperNominalDiameter>("1/2");
   const [hasAppliance, setHasAppliance] = useState(false);
-  const [catalogId, setCatalogId] = useState<string>("custom");
-  const [appName, setAppName] = useState("Artefacto");
-  const [appPowerMcalH, setAppPowerMcalH] = useState<number>(8);
-  const [appQuantity, setAppQuantity] = useState<number>(1);
-  const [appRoomId, setAppRoomId] = useState<string>("");
+  const [wizardAppDraft, setWizardAppDraft] = useState<ApplianceDraft>(() =>
+    createDefaultApplianceDraft()
+  );
 
-  // Estado para agregar quiebre o artefacto en tramo seleccionado
+  // Estado para agregar quiebre o agregar/editar artefacto en tramo seleccionado
   const [bendDir, setBendDir] = useState<Direction>("right");
   const [bendLengthM, setBendLengthM] = useState<number>(3);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [editingPanelAppId, setEditingPanelAppId] = useState<string | null>(null);
+  const [editingPanelAppMode, setEditingPanelAppMode] = useState<
+    "room" | "appliance" | null
+  >(null);
+  const [editingAppDraft, setEditingAppDraft] = useState<ApplianceDraft | null>(
+    null
+  );
+  const [addingAppSegmentId, setAddingAppSegmentId] = useState<string | null>(
+    null
+  );
+  const [newAppDraft, setNewAppDraft] = useState<ApplianceDraft>(() =>
+    createDefaultApplianceDraft()
+  );
+
+  useEffect(() => {
+    setAddingAppSegmentId(null);
+    setEditingPanelAppId(null);
+    setEditingPanelAppMode(null);
+    setEditingAppDraft(null);
+  }, [selectedSegmentId]);
 
   const effectiveOrigin = availableOriginPoints.includes(fromPointId)
     ? fromPointId
@@ -135,7 +161,10 @@ export function NetworkPanel({
       evaluateDirectionsFromPoint({
         segments,
         fromPointId: effectiveOrigin,
-        candidateLengthCm: Math.max(10, Math.round(lengthMeters * 100 + lengthCmExtra)),
+        candidateLengthCm: Math.max(
+          10,
+          Math.round(lengthMeters * 100 + lengthCmExtra)
+        ),
       }),
     [segments, effectiveOrigin, lengthMeters, lengthCmExtra]
   );
@@ -168,21 +197,9 @@ export function NetworkPanel({
       nominalDiameter: diameter,
     };
 
-    const catItem = APPLIANCE_CATALOG_TABLA_V.find((c) => c.id === catalogId);
-
     onAddSegmentWithAppliance({
       segment: seg,
-      appliance: hasAppliance
-        ? {
-            name: catItem ? catItem.name : appName,
-            catalogId: catItem?.id,
-            applianceClass: catItem?.applianceClass ?? "otro",
-            circuitType: catItem?.defaultCircuitType ?? "A",
-            powerMcalPerHour: catItem ? catItem.powerMcalPerHour : appPowerMcalH,
-            quantity: appQuantity,
-            roomId: appRoomId || undefined,
-          }
-        : undefined,
+      appliance: hasAppliance ? applianceDraftToInput(wizardAppDraft) : undefined,
     });
 
     setWizardOpen(false);
@@ -193,31 +210,21 @@ export function NetworkPanel({
     <div className="space-y-3">
       {/* Selector de gas y botón caso de examen */}
       <div className="rounded-xl border border-pizarra-border bg-pizarra-surface p-3 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-[190px] flex-1">
-            <label className="block text-[11px] font-semibold uppercase tracking-wide text-pizarra-subtext">
-              Tipo de gas y PCS (Tabla VI)
-            </label>
-            <select
-              value={gasType}
-              onChange={(e) => onChangeGasType(e.target.value as GasConfigId)}
-              className="mt-1 w-full rounded-lg border border-pizarra-border-control bg-pizarra-control px-2.5 py-1.5 text-sm font-medium text-pizarra-text"
-            >
-              {Object.values(GAS_SPECIFICATIONS).map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.label} · {g.pcsMcalPerM3} Mcal/m³ (máx {g.maxPressureDropPa} Pa)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            type="button"
-            onClick={onLoadExamExample}
-            className="mt-4 rounded-lg border border-pizarra-border-control bg-pizarra-control px-3 py-1.5 text-xs font-semibold text-pizarra-text-control transition-colors hover:bg-pizarra-control-hover"
+        <div>
+          <label className="block text-[11px] font-semibold uppercase tracking-wide text-pizarra-subtext">
+            Tipo de gas y PCS (Tabla VI)
+          </label>
+          <select
+            value={gasType}
+            onChange={(e) => onChangeGasType(e.target.value as GasConfigId)}
+            className="mt-1 w-full rounded-lg border border-pizarra-border-control bg-pizarra-control px-2.5 py-1.5 text-sm font-medium text-pizarra-text"
           >
-            Cargar ejemplo del examen
-          </button>
+            {Object.values(GAS_SPECIFICATIONS).map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.label} · {g.pcsMcalPerM3} Mcal/m³ (máx {g.maxPressureDropPa} Pa)
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -270,36 +277,27 @@ export function NetworkPanel({
             </div>
           )}
 
-          {/* Largo por partes y ajuste fino cm / 10 cm */}
+          {/* Largo por partes */}
           <div className="mt-3 space-y-2">
             {selectedSegment.parts.map((part, idx) => (
               <div
                 key={`${selectedSegment.id}-part-${idx}`}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-pizarra-border bg-pizarra-secondary p-2"
               >
-                <span className="text-xs font-semibold text-pizarra-text">
-                  Parte {idx + 1}: {directionLabelEs(part.direction)}
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onAdjustLengthCm(selectedSegment.id, -10)}
-                    className="rounded border border-pizarra-border-control bg-pizarra-control px-1.5 py-0.5 text-[11px] font-semibold text-pizarra-text-control hover:bg-pizarra-control-hover"
-                  >
-                    -10 cm
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onAdjustLengthCm(selectedSegment.id, -1)}
-                    className="rounded border border-pizarra-border-control bg-pizarra-control px-1.5 py-0.5 text-[11px] font-semibold text-pizarra-text-control hover:bg-pizarra-control-hover"
-                  >
-                    -1
-                  </button>
+                <div>
+                  <span className="text-xs font-semibold text-pizarra-text">
+                    Parte {idx + 1}: {directionLabelEs(part.direction)}
+                  </span>
+                  <p className="text-[10px] text-pizarra-subtext">
+                    Mantén presionado el nodo en el plano para mover (±10 cm)
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
                   <input
                     type="number"
                     min={10}
                     max={5000}
-                    step={1}
+                    step={10}
                     value={part.lengthCm}
                     onChange={(e) =>
                       onSetSingleLengthCm(
@@ -310,21 +308,9 @@ export function NetworkPanel({
                     }
                     className="w-20 rounded border border-pizarra-border-control bg-pizarra-control px-1.5 py-0.5 text-center text-xs font-bold tabular-nums text-pizarra-text"
                   />
-                  <span className="text-[11px] font-medium text-pizarra-subtext">cm</span>
-                  <button
-                    type="button"
-                    onClick={() => onAdjustLengthCm(selectedSegment.id, 1)}
-                    className="rounded border border-pizarra-border-control bg-pizarra-control px-1.5 py-0.5 text-[11px] font-semibold text-pizarra-text-control hover:bg-pizarra-control-hover"
-                  >
-                    +1
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onAdjustLengthCm(selectedSegment.id, 10)}
-                    className="rounded border border-pizarra-border-control bg-pizarra-control px-1.5 py-0.5 text-[11px] font-semibold text-pizarra-text-control hover:bg-pizarra-control-hover"
-                  >
-                    +10 cm
-                  </button>
+                  <span className="text-[11px] font-medium text-pizarra-subtext">
+                    cm ({(part.lengthCm / 100).toFixed(2)} m)
+                  </span>
                 </div>
               </div>
             ))}
@@ -375,8 +361,8 @@ export function NetworkPanel({
             </select>
             <input
               type="number"
-              min={0.5}
-              step={0.5}
+              min={0.1}
+              step={0.1}
               value={bendLengthM}
               onChange={(e) => setBendLengthM(Number(e.target.value) || 1)}
               className="w-16 rounded border border-pizarra-border-control bg-pizarra-control px-2 py-1 text-xs tabular-nums text-pizarra-text"
@@ -401,20 +387,49 @@ export function NetworkPanel({
               </span>
               <button
                 type="button"
-                onClick={() =>
-                  onAddApplianceToSegment(selectedSegment.id, {
-                    name: `Artefacto ${selectedSegment.toPointId}`,
-                    applianceClass: "estufa",
-                    circuitType: "A",
-                    powerMcalPerHour: 3,
-                    quantity: 1,
-                  })
-                }
+                onClick={() => {
+                  if (addingAppSegmentId === selectedSegment.id) {
+                    setAddingAppSegmentId(null);
+                  } else {
+                    setNewAppDraft(
+                      createDefaultApplianceDraft(selectedSegment.toPointId)
+                    );
+                    setAddingAppSegmentId(selectedSegment.id);
+                    setEditingPanelAppId(null);
+                    setEditingPanelAppMode(null);
+                  }
+                }}
                 className="text-xs font-semibold text-pizarra-link hover:underline"
               >
-                + Agregar artefacto
+                {addingAppSegmentId === selectedSegment.id
+                  ? "Cancelar"
+                  : "+ Agregar artefacto"}
               </button>
             </div>
+
+            {addingAppSegmentId === selectedSegment.id && (
+              <div className="mt-2 rounded-lg border border-pizarra-action/50 bg-pizarra-secondary p-2.5">
+                <p className="mb-2 text-[11px] font-bold text-pizarra-text">
+                  Nuevo artefacto en punto {selectedSegment.toPointId}
+                </p>
+                <ApplianceForm
+                  draft={newAppDraft}
+                  rooms={rooms}
+                  showRoomSelect
+                  submitLabel="Agregar artefacto"
+                  onChange={setNewAppDraft}
+                  onSubmit={() => {
+                    onAddApplianceToSegment(
+                      selectedSegment.id,
+                      applianceDraftToInput(newAppDraft)
+                    );
+                    setAddingAppSegmentId(null);
+                  }}
+                  onCancel={() => setAddingAppSegmentId(null)}
+                />
+              </div>
+            )}
+
             {selectedSegApps.length > 0 && (
               <ul className="mt-1.5 space-y-1.5">
                 {selectedSegApps.map((a) => {
@@ -425,7 +440,12 @@ export function NetworkPanel({
                   const isInsufficient = Boolean(
                     roomEval && roomEval.totalPowerKw > 0 && !roomEval.volumeCompliant
                   );
-                  const isExpanded = editingPanelAppId === a.id;
+                  const isExpandedRoom =
+                    editingPanelAppId === a.id && editingPanelAppMode === "room";
+                  const isExpandedEdit =
+                    editingPanelAppId === a.id &&
+                    editingPanelAppMode === "appliance" &&
+                    editingAppDraft !== null;
 
                   return (
                     <li
@@ -433,46 +453,138 @@ export function NetworkPanel({
                       className="overflow-hidden rounded-lg border border-pizarra-border bg-pizarra-secondary text-xs"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5">
-                        <div>
+                        <div className="min-w-0">
                           <span className="font-medium text-pizarra-text">
                             {a.name}
                           </span>
                           <span className="ml-1.5 font-semibold tabular-nums text-pizarra-subtext">
-                            ({a.powerMcalPerHour * a.quantity} Mcal/h)
+                            ({a.powerMcalPerHour * a.quantity} Mcal/h
+                            {a.quantity > 1 ? ` · ${a.quantity}×` : ""} · Tipo{" "}
+                            {a.circuitType})
                           </span>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setEditingPanelAppId(isExpanded ? null : a.id)
-                          }
-                          className={`rounded border px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-colors ${
-                            !assignedRoom
-                              ? "border-pizarra-border-control bg-pizarra-control text-pizarra-link hover:bg-pizarra-control-hover"
+                        <div className="flex flex-wrap items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isExpandedEdit) {
+                                setEditingPanelAppId(null);
+                                setEditingPanelAppMode(null);
+                                setEditingAppDraft(null);
+                              } else {
+                                setAddingAppSegmentId(null);
+                                setEditingAppDraft(
+                                  createApplianceDraftFromAppliance(a)
+                                );
+                                setEditingPanelAppId(a.id);
+                                setEditingPanelAppMode("appliance");
+                              }
+                            }}
+                            title={`Editar ${a.name}`}
+                            aria-label={`Editar ${a.name}`}
+                            className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-semibold transition-colors ${
+                              isExpandedEdit
+                                ? "border-pizarra-action bg-pizarra-action text-pizarra-action-text"
+                                : "border-pizarra-border-control bg-pizarra-control text-pizarra-text-control hover:bg-pizarra-control-hover"
+                            }`}
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Editar
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isExpandedRoom) {
+                                setEditingPanelAppId(null);
+                                setEditingPanelAppMode(null);
+                              } else {
+                                setAddingAppSegmentId(null);
+                                setEditingPanelAppId(a.id);
+                                setEditingPanelAppMode("room");
+                              }
+                            }}
+                            className={`rounded border px-2 py-0.5 text-[11px] font-semibold tabular-nums transition-colors ${
+                              !assignedRoom
+                                ? "border-pizarra-border-control bg-pizarra-control text-pizarra-link hover:bg-pizarra-control-hover"
+                                : isInsufficient
+                                  ? "animate-badge-error border-status-error-border bg-status-error-bg text-status-error-text"
+                                  : "border-status-ok-border bg-status-ok-bg text-status-ok-text"
+                            }`}
+                          >
+                            {!assignedRoom
+                              ? "+ Tamaño recinto"
                               : isInsufficient
-                                ? "animate-badge-error border-status-error-border bg-status-error-bg text-status-error-text"
-                                : "border-status-ok-border bg-status-ok-bg text-status-ok-text"
-                          }`}
-                        >
-                          {!assignedRoom
-                            ? "+ Tamaño recinto"
-                            : isInsufficient
-                              ? `${assignedRoom.lengthMeters}×${assignedRoom.widthMeters}×${assignedRoom.heightMeters} m · Insuficiente`
-                              : `${assignedRoom.lengthMeters}×${assignedRoom.widthMeters}×${assignedRoom.heightMeters} m · OK`}
-                        </button>
+                                ? `${assignedRoom.lengthMeters}×${assignedRoom.widthMeters}×${assignedRoom.heightMeters} m · Insuficiente`
+                                : `${assignedRoom.lengthMeters}×${assignedRoom.widthMeters}×${assignedRoom.heightMeters} m · OK`}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onDeleteAppliance(a.id);
+                              if (editingPanelAppId === a.id) {
+                                setEditingPanelAppId(null);
+                                setEditingPanelAppMode(null);
+                                setEditingAppDraft(null);
+                              }
+                            }}
+                            title={`Borrar ${a.name}`}
+                            aria-label={`Borrar ${a.name}`}
+                            className="inline-flex items-center rounded border border-status-error-border bg-status-error-bg p-1 text-status-error-text transition-colors hover:opacity-90"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
                       </div>
 
-                      {isExpanded && (
+                      {isExpandedEdit && editingAppDraft && (
+                        <div className="border-t border-pizarra-border bg-pizarra-surface p-2.5">
+                          <ApplianceForm
+                            draft={editingAppDraft}
+                            submitLabel="Guardar cambios"
+                            onChange={setEditingAppDraft}
+                            onSubmit={() => {
+                              onUpdateAppliance({
+                                ...a,
+                                ...applianceDraftToInput(editingAppDraft),
+                                roomId: a.roomId,
+                              });
+                              setEditingPanelAppId(null);
+                              setEditingPanelAppMode(null);
+                              setEditingAppDraft(null);
+                            }}
+                            onCancel={() => {
+                              setEditingPanelAppId(null);
+                              setEditingPanelAppMode(null);
+                              setEditingAppDraft(null);
+                            }}
+                            onDelete={() => {
+                              onDeleteAppliance(a.id);
+                              setEditingPanelAppId(null);
+                              setEditingPanelAppMode(null);
+                              setEditingAppDraft(null);
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {isExpandedRoom && (
                         <RoomQuickEditor
                           gasType={gasType}
                           appliance={a}
                           rooms={rooms}
                           roomEvaluations={roomEvaluations}
+                          onUpdateAppliance={onUpdateAppliance}
+                          onDeleteAppliance={onDeleteAppliance}
                           onUpdateRoom={onUpdateRoom}
                           onCreateAndAssignRoom={onCreateAndAssignRoom}
                           onAssignApplianceRoom={onAssignApplianceRoom}
-                          onClose={() => setEditingPanelAppId(null)}
+                          onClose={() => {
+                            setEditingPanelAppId(null);
+                            setEditingPanelAppMode(null);
+                          }}
                         />
                       )}
                     </li>
@@ -686,18 +798,34 @@ export function NetworkPanel({
             </div>
           </div>
 
-          {/* Longitud real m y cm */}
+          {/* Longitud real m (acepta 1,5 o 1.5) y cm */}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="block text-[11px] font-semibold text-pizarra-subtext">
                 Metros (m)
               </label>
               <input
-                type="number"
-                min={0}
-                max={50}
-                value={lengthMeters}
-                onChange={(e) => setLengthMeters(Number(e.target.value) || 0)}
+                type="text"
+                inputMode="decimal"
+                aria-label="Metros del tramo en panel"
+                value={lengthMetersStr}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setLengthMetersStr(raw);
+                  if (!raw.trim()) {
+                    setLengthMeters(0);
+                    return;
+                  }
+                  const parsed = parseDecimalMeters(raw, 0, 50);
+                  if (parsed !== null) {
+                    const hasFraction =
+                      raw.includes(",") ||
+                      raw.includes(".") ||
+                      !Number.isInteger(parsed);
+                    setLengthMeters(parsed);
+                    if (hasFraction) setLengthCmExtra(0);
+                  }
+                }}
                 className="mt-1 w-full rounded-lg border border-pizarra-border-control bg-pizarra-control px-2.5 py-1.5 text-sm text-pizarra-text tabular-nums"
               />
             </div>
@@ -716,6 +844,20 @@ export function NetworkPanel({
             </div>
           </div>
 
+          {dirStatus.options.some((o) => !o.available && (o.maxLengthCm ?? 0) >= 10) && (
+            <p className="rounded border border-pizarra-border bg-pizarra-secondary px-2 py-1 text-[11px] text-pizarra-subtext">
+              Alguna dirección bloqueada admite tramos más cortos (ej.{" "}
+              {(
+                Math.max(
+                  ...dirStatus.options
+                    .filter((o) => !o.available && (o.maxLengthCm ?? 0) >= 10)
+                    .map((o) => o.maxLengthCm ?? 0)
+                ) / 100
+              ).toFixed(2)}{" "}
+              m o menos). Ajusta Metros arriba para habilitarla.
+            </p>
+          )}
+
           {/* Artefacto al final */}
           <div className="rounded-lg border border-pizarra-border bg-pizarra-secondary p-2.5">
             <label className="flex items-center gap-2 text-xs font-semibold text-pizarra-text">
@@ -729,69 +871,13 @@ export function NetworkPanel({
             </label>
 
             {hasAppliance && (
-              <div className="mt-2 space-y-2">
-                <select
-                  value={catalogId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setCatalogId(id);
-                    const found = APPLIANCE_CATALOG_TABLA_V.find((c) => c.id === id);
-                    if (found) {
-                      setAppName(found.name);
-                      setAppPowerMcalH(found.powerMcalPerHour);
-                    }
-                  }}
-                  className="w-full rounded border border-pizarra-border-control bg-pizarra-control px-2 py-1 text-xs text-pizarra-text"
-                >
-                  <option value="custom">Potencia manual (Mcal/h)</option>
-                  {APPLIANCE_CATALOG_TABLA_V.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} — {item.powerMcalPerHour} Mcal/h
-                    </option>
-                  ))}
-                </select>
-
-                <div className="grid grid-cols-3 gap-1.5">
-                  <input
-                    type="text"
-                    value={appName}
-                    onChange={(e) => setAppName(e.target.value)}
-                    placeholder="Nombre"
-                    className="col-span-2 rounded border border-pizarra-border-control bg-pizarra-control px-2 py-1 text-xs text-pizarra-text placeholder:text-pizarra-muted"
-                  />
-                  <input
-                    type="number"
-                    step={0.1}
-                    min={0.5}
-                    value={appPowerMcalH}
-                    onChange={(e) => setAppPowerMcalH(Number(e.target.value) || 1)}
-                    placeholder="Mcal/h"
-                    className="rounded border border-pizarra-border-control bg-pizarra-control px-2 py-1 text-xs text-pizarra-text tabular-nums placeholder:text-pizarra-muted"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-1.5">
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={appQuantity}
-                    onChange={(e) => setAppQuantity(Number(e.target.value) || 1)}
-                    className="rounded border border-pizarra-border-control bg-pizarra-control px-2 py-1 text-xs text-pizarra-text tabular-nums"
-                  />
-                  <select
-                    value={appRoomId}
-                    onChange={(e) => setAppRoomId(e.target.value)}
-                    className="rounded border border-pizarra-border-control bg-pizarra-control px-2 py-1 text-xs text-pizarra-text"
-                  >
-                    <option value="">Sin recinto</option>
-                    {rooms.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="mt-2">
+                <ApplianceForm
+                  draft={wizardAppDraft}
+                  rooms={rooms}
+                  showRoomSelect
+                  onChange={setWizardAppDraft}
+                />
               </div>
             )}
           </div>

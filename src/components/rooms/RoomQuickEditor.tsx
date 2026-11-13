@@ -5,19 +5,30 @@ import {
   AlertTriangle,
   CheckCircle2,
   DoorOpen,
+  Pencil,
   Plus,
+  Trash2,
   Unlink,
   X,
 } from "lucide-react";
 import { evaluateRooms, type RoomEvaluation } from "@/domain/calculations/rooms";
+import { parseDecimalMeters } from "@/domain/diagram";
 import { DEFAULT_ROOM_HEIGHT_METERS } from "@/domain/ds66/rooms";
 import type { Appliance, GasConfigId, Room } from "@/domain/types";
+import {
+  ApplianceForm,
+  applianceDraftToInput,
+  createApplianceDraftFromAppliance,
+  type ApplianceDraft,
+} from "@/components/network/ApplianceForm";
 
 interface RoomQuickEditorProps {
   gasType: GasConfigId;
   appliance: Appliance;
   rooms: Room[];
   roomEvaluations: RoomEvaluation[];
+  onUpdateAppliance?: (appliance: Appliance) => void;
+  onDeleteAppliance?: (applianceId: string) => void;
   onUpdateRoom: (room: Room) => void;
   onCreateAndAssignRoom: (applianceId: string, room: Room) => void;
   onAssignApplianceRoom: (
@@ -27,23 +38,17 @@ interface RoomQuickEditorProps {
   onClose?: () => void;
 }
 
-function parsePositiveMeters(raw: string): number | null {
-  const normalized = raw.replace(",", ".").trim();
-  if (!normalized) return null;
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed) || parsed < 0.5) return null;
-  return Number(parsed.toFixed(2));
-}
-
 /**
- * Editor compacto de recinto (largo, ancho, alto y ventilación) ligado a un artefacto.
- * Permite crear un cuadro de recinto para artefactos sin recinto o ajustar dimensiones en vivo.
+ * Editor compacto de artefacto y recinto (largo, ancho, alto y ventilación).
+ * Permite modificar o borrar el artefacto, o ajustar/crear su cuadro de recinto en vivo.
  */
 export function RoomQuickEditor({
   gasType,
   appliance,
   rooms,
   roomEvaluations,
+  onUpdateAppliance,
+  onDeleteAppliance,
   onUpdateRoom,
   onCreateAndAssignRoom,
   onAssignApplianceRoom,
@@ -54,13 +59,28 @@ export function RoomQuickEditor({
     ? roomEvaluations.find((e) => e.roomId === assignedRoom.id) ?? null
     : null;
 
-  const [draftName, setDraftName] = useState(`Recinto ${appliance.id}`);
+  const defaultRoomName = `Recinto ${
+    !appliance.id.startsWith("app-") && appliance.id.length <= 6
+      ? appliance.id
+      : appliance.name
+  }`;
+
+  const [editingApplianceInfo, setEditingApplianceInfo] = useState(false);
+  const [appDraft, setAppDraft] = useState<ApplianceDraft>(() =>
+    createApplianceDraftFromAppliance(appliance)
+  );
+  const [draftName, setDraftName] = useState(defaultRoomName);
   const [draftLengthStr, setDraftLengthStr] = useState("3");
   const [draftWidthStr, setDraftWidthStr] = useState("3");
   const [draftHeightStr, setDraftHeightStr] = useState(
     String(DEFAULT_ROOM_HEIGHT_METERS)
   );
   const [draftVent, setDraftVent] = useState<"directa" | "indirecta">("directa");
+
+  useEffect(() => {
+    setAppDraft(createApplianceDraftFromAppliance(appliance));
+    setEditingApplianceInfo(false);
+  }, [appliance.id]);
 
   useEffect(() => {
     if (assignedRoom) {
@@ -70,22 +90,23 @@ export function RoomQuickEditor({
       setDraftHeightStr(String(assignedRoom.heightMeters));
       setDraftVent(assignedRoom.ventilationType);
     } else {
-      setDraftName(`Recinto ${appliance.id}`);
+      setDraftName(defaultRoomName);
       setDraftLengthStr("3");
       setDraftWidthStr("3");
       setDraftHeightStr(String(DEFAULT_ROOM_HEIGHT_METERS));
       setDraftVent("directa");
     }
-  }, [assignedRoom, appliance.id]);
+  }, [assignedRoom, defaultRoomName]);
 
   const previewEval = useMemo(() => {
     if (assignedEval) return assignedEval;
-    const len = parsePositiveMeters(draftLengthStr) ?? 3;
-    const wid = parsePositiveMeters(draftWidthStr) ?? 3;
-    const hei = parsePositiveMeters(draftHeightStr) ?? DEFAULT_ROOM_HEIGHT_METERS;
+    const len = parseDecimalMeters(draftLengthStr, 0.5, 50) ?? 3;
+    const wid = parseDecimalMeters(draftWidthStr, 0.5, 50) ?? 3;
+    const hei =
+      parseDecimalMeters(draftHeightStr, 0.5, 50) ?? DEFAULT_ROOM_HEIGHT_METERS;
     const tempRoom: Room = {
       id: "__preview__",
-      name: draftName.trim() || `Recinto ${appliance.id}`,
+      name: draftName.trim() || defaultRoomName,
       lengthMeters: len,
       widthMeters: wid,
       heightMeters: hei,
@@ -104,6 +125,7 @@ export function RoomQuickEditor({
     draftWidthStr,
     draftHeightStr,
     draftName,
+    defaultRoomName,
     draftVent,
     gasType,
     appliance,
@@ -118,24 +140,26 @@ export function RoomQuickEditor({
     if (field === "heightMeters") setDraftHeightStr(raw);
 
     if (!assignedRoom) return;
-    const val = parsePositiveMeters(raw);
+    const val = parseDecimalMeters(raw, 0.5, 50);
     if (val === null) return;
     if (field === "heightMeters" && val < 1.5) return;
-    onUpdateRoom({ ...assignedRoom, [field]: val });
+    onUpdateRoom({ ...assignedRoom, [field]: Number(val.toFixed(2)) });
   };
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    const len = parsePositiveMeters(draftLengthStr) ?? 3;
-    const wid = parsePositiveMeters(draftWidthStr) ?? 3;
-    const hei = Math.max(
-      1.5,
-      parsePositiveMeters(draftHeightStr) ?? DEFAULT_ROOM_HEIGHT_METERS
+    const len = Number((parseDecimalMeters(draftLengthStr, 0.5, 50) ?? 3).toFixed(2));
+    const wid = Number((parseDecimalMeters(draftWidthStr, 0.5, 50) ?? 3).toFixed(2));
+    const hei = Number(
+      Math.max(
+        1.5,
+        parseDecimalMeters(draftHeightStr, 0.5, 50) ?? DEFAULT_ROOM_HEIGHT_METERS
+      ).toFixed(2)
     );
     const id = `room-${appliance.id.replace(/[^a-zA-Z0-9_-]/g, "")}-${Date.now().toString(36)}`;
     onCreateAndAssignRoom(appliance.id, {
       id,
-      name: draftName.trim() || `Recinto ${appliance.id}`,
+      name: draftName.trim() || defaultRoomName,
       lengthMeters: len,
       widthMeters: wid,
       heightMeters: hei,
@@ -188,7 +212,35 @@ export function RoomQuickEditor({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {onUpdateAppliance && (
+            <button
+              type="button"
+              onClick={() => {
+                setAppDraft(createApplianceDraftFromAppliance(appliance));
+                setEditingApplianceInfo((prev) => !prev);
+              }}
+              className="inline-flex items-center gap-1 rounded border border-pizarra-border-control bg-pizarra-control px-2 py-1 text-[11px] font-semibold text-pizarra-link hover:bg-pizarra-control-hover"
+              title="Modificar tipo, nombre, potencia o cantidad de este artefacto"
+            >
+              <Pencil className="h-3 w-3" />
+              {editingApplianceInfo ? "Ocultar artefacto" : "Editar artefacto"}
+            </button>
+          )}
+          {onDeleteAppliance && (
+            <button
+              type="button"
+              onClick={() => {
+                onDeleteAppliance(appliance.id);
+                onClose?.();
+              }}
+              className="inline-flex items-center gap-1 rounded border border-status-error-border bg-status-error-bg px-2 py-1 text-[11px] font-semibold text-status-error-text hover:opacity-90"
+              title="Borrar este artefacto del tramo"
+            >
+              <Trash2 className="h-3 w-3" />
+              Borrar artefacto
+            </button>
+          )}
           {assignedRoom && (
             <button
               type="button"
@@ -212,6 +264,25 @@ export function RoomQuickEditor({
           )}
         </div>
       </div>
+
+      {editingApplianceInfo && onUpdateAppliance && (
+        <div className="mt-2.5 rounded-lg border border-pizarra-border bg-pizarra-surface p-2.5">
+          <ApplianceForm
+            draft={appDraft}
+            submitLabel="Guardar artefacto"
+            onChange={setAppDraft}
+            onSubmit={() => {
+              onUpdateAppliance({
+                ...appliance,
+                ...applianceDraftToInput(appDraft),
+                roomId: appliance.roomId,
+              });
+              setEditingApplianceInfo(false);
+            }}
+            onCancel={() => setEditingApplianceInfo(false)}
+          />
+        </div>
+      )}
 
       <form
         onSubmit={handleCreateRoom}

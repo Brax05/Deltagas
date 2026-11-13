@@ -14,14 +14,21 @@ import {
   applyAddSegment,
   applyAdjustLastPartLengthCm,
   applyDeleteSegmentWithSubtree,
+  applyUpdateSegmentParts,
   createInitialHistory,
   evaluateDirectionsFromPoint,
+  parseDecimalMeters,
   redoNetworkHistory,
+  snapVectorToDirectionAndStepCm,
   undoNetworkHistory,
   validateDiagram,
 } from "@/domain/diagram";
 import { createExamReferenceProject } from "@/domain/fixtures/exam-reference";
-import { sanitizeProjectData } from "@/lib/storage/draft";
+import {
+  DIAGRAM_EXAMPLES,
+  getDefaultExampleDiagram,
+} from "@/domain/fixtures/examples";
+import { resolveDraftProject, sanitizeProjectData } from "@/lib/storage/draft";
 import type { Appliance, Segment } from "@/domain/types";
 
 describe("DS 66 Tablas 1/5 y Fórmula de Pole (Sección 5.1)", () => {
@@ -439,4 +446,182 @@ describe("Persistencia y sanitización de borradores", () => {
     };
     expect(sanitizeProjectData(emptyExam)).toBeNull();
   });
+
+  it("inicia vacío por defecto y conserva el diagrama de ejemplo cuando el usuario lo carga", () => {
+    expect(DIAGRAM_EXAMPLES.map((ex) => ex.title)).toEqual([
+      "Ejemplo 1",
+      "Ejemplo 2",
+    ]);
+    expect(resolveDraftProject(null).segments).toHaveLength(0);
+
+    const legacyAutoSeeded = createExamReferenceProject();
+    expect(
+      resolveDraftProject(JSON.stringify(legacyAutoSeeded), {
+        fromLegacyStorage: true,
+      }).segments
+    ).toHaveLength(0);
+
+    const loadedExample = getDefaultExampleDiagram();
+    const restored = resolveDraftProject(JSON.stringify(loadedExample));
+    expect(restored.id).toBe("modulo-4-parte-2-1-glp");
+    expect(restored.gasType).toBe("GLP");
+    expect(restored.segments).toHaveLength(5);
+    expect(restored.appliances.map((a) => [a.name, a.powerMcalPerHour])).toEqual([
+      ["Calefón", 26],
+      ["Cocina", 8],
+      ["Estufa", 5],
+    ]);
+    expect(validateDiagram(restored.segments).valid).toBe(true);
+    const mod4Calc = calculateNetwork({
+      gasType: restored.gasType,
+      segments: restored.segments,
+      appliances: restored.appliances,
+    });
+    expect(mod4Calc.totalPowerMcalH).toBe(39);
+    expect(mod4Calc.allCompliant).toBe(true);
+
+    const examLoaded = DIAGRAM_EXAMPLES.find(
+      (ex) => ex.id === "examen-arica-ds66"
+    )?.createProject();
+    expect(examLoaded).toBeDefined();
+    const examRestored = resolveDraftProject(JSON.stringify(examLoaded));
+    expect(examRestored.segments).toHaveLength(11);
+    expect(examRestored.id).toBe("proyecto-examen-ds66");
+
+    const customV1 = { ...examLoaded!, id: "mi-proyecto-1" };
+    expect(
+      resolveDraftProject(JSON.stringify(customV1), {
+        fromLegacyStorage: true,
+      }).segments
+    ).toHaveLength(11);
+  });
 });
+
+describe("Snapping direccional en saltos de 10 cm al arrastrar nodos", () => {
+  it("cuantiza cualquier vector a la dirección más cercana (8 direcciones) en saltos de 10 cm", () => {
+    // Hacia la derecha 2.34 m -> right, 230 cm
+    const rightSnap = snapVectorToDirectionAndStepCm({
+      dxMeters: 2.34,
+      dyMeters: 0.12,
+    });
+    expect(rightSnap).toEqual({ direction: "right", lengthCm: 230 });
+
+    // Diagonal arriba-derecha 3.0 m (proyección sobre u = (cos 45, sin 45) -> dist = 3.0 m -> 300 cm)
+    const diagLen = 3 * Math.SQRT1_2;
+    const diagSnap = snapVectorToDirectionAndStepCm({
+      dxMeters: diagLen,
+      dyMeters: diagLen,
+    });
+    expect(diagSnap).toEqual({ direction: "up-right", lengthCm: 300 });
+
+    // Vector nulo usa dirección fallback y largo mínimo de 10 cm
+    const minSnap = snapVectorToDirectionAndStepCm({
+      dxMeters: 0,
+      dyMeters: 0,
+      fallbackDirection: "down",
+    });
+    expect(minSnap).toEqual({ direction: "down", lengthCm: 10 });
+  });
+
+  it("actualiza dirección y longitud en 10 cm en un único paso de historial al soltar nodo", () => {
+    let hist = createInitialHistory({
+      segments: [
+        {
+          id: "T1",
+          fromPointId: "S",
+          toPointId: "A",
+          parts: [{ direction: "right", lengthCm: 400 }],
+          nominalDiameter: "1/2",
+        },
+      ],
+      appliances: [],
+    });
+    hist = applyUpdateSegmentParts(hist, "T1", [
+      { direction: "up-right", lengthCm: 430 },
+    ]);
+    expect(hist.lastRejectionReason).toBeNull();
+    expect(hist.present.segments[0]?.parts[0]).toEqual({
+      direction: "up-right",
+      lengthCm: 430,
+    });
+    expect(hist.past).toHaveLength(1);
+    hist = undoNetworkHistory(hist);
+    expect(hist.present.segments[0]?.parts[0]).toEqual({
+      direction: "right",
+      lengthCm: 400,
+    });
+  });
+});
+
+describe("Tramos cortos (1,5 m) cerca de tramos existentes y decimales con coma", () => {
+  it("habilita direcciones donde cabe un tramo corto (1.5 m) aunque exista un tramo a 2.0 m", () => {
+    // T1: S(0,0) -> A(0,4); T2: A(0,4) -> B(2,4); T3: B(2,4) -> C(2,2)
+    // Desde C(2,2) hacia la izquierda hay 2.0 m hasta T1 en x = 0.
+    const segments: Segment[] = [
+      {
+        id: "T1",
+        fromPointId: "S",
+        toPointId: "A",
+        parts: [{ direction: "up", lengthCm: 400 }],
+        nominalDiameter: "1/2",
+      },
+      {
+        id: "T2",
+        fromPointId: "A",
+        toPointId: "B",
+        parts: [{ direction: "right", lengthCm: 200 }],
+        nominalDiameter: "1/2",
+      },
+      {
+        id: "T3",
+        fromPointId: "B",
+        toPointId: "C",
+        parts: [{ direction: "down", lengthCm: 200 }],
+        nominalDiameter: "1/2",
+      },
+    ];
+
+    // Sin largo fijo (puertos '+' del diagrama), "left" debe permanecer disponible
+    const portEval = evaluateDirectionsFromPoint({
+      segments,
+      fromPointId: "C",
+    });
+    const leftPort = portEval.options.find((o) => o.direction === "left");
+    expect(leftPort?.available).toBe(true);
+    expect(leftPort?.maxLengthCm).toBe(190);
+    expect(leftPort?.suggestedLengthCm).toBe(150);
+
+    // Con largo explícito 150 cm (1.5 m), "left" debe estar habilitado y validar sin conflictos
+    const shortEval = evaluateDirectionsFromPoint({
+      segments,
+      fromPointId: "C",
+      candidateLengthCm: 150,
+    });
+    expect(shortEval.options.find((o) => o.direction === "left")?.available).toBe(
+      true
+    );
+
+    const validShort = validateDiagram([
+      ...segments,
+      {
+        id: "T4",
+        fromPointId: "C",
+        toPointId: "D",
+        parts: [{ direction: "left", lengthCm: 150 }],
+        nominalDiameter: "1/2",
+      },
+    ]);
+    expect(validShort.valid).toBe(true);
+  });
+
+  it("parsea medidas con coma y punto decimal (ej. 1,5 y 1.5)", () => {
+    expect(parseDecimalMeters("1,5")).toBe(1.5);
+    expect(parseDecimalMeters("1.5")).toBe(1.5);
+    expect(parseDecimalMeters(" 0,8 ")).toBe(0.8);
+    expect(parseDecimalMeters("")).toBeNull();
+    expect(parseDecimalMeters("abc")).toBeNull();
+    expect(parseDecimalMeters("55", 0, 50)).toBeNull();
+  });
+});
+
+

@@ -1,6 +1,8 @@
 import { DEFAULT_ROOM_HEIGHT_METERS } from "@/domain/ds66/rooms";
 import type { ProjectData } from "@/domain/types";
 
+export const EXAM_REFERENCE_UNEDITED_UPDATED_AT = "2026-11-12T00:00:00.000Z";
+
 /**
  * Caso de referencia (Sección 17):
  * Gas GLP (cilindros 45 kg), Casa 180 m² en Arica (10 °C),
@@ -10,7 +12,7 @@ import type { ProjectData } from "@/domain/types";
 export function createExamReferenceProject(): ProjectData {
   return {
     id: "proyecto-examen-ds66",
-    name: "Caso de referencia: Examen final DS 66 (Arica)",
+    name: "Ejemplo 2 — Examen final DS 66 (Arica)",
     gasType: "GLP",
     client: {
       ownerName: "Propietario de referencia",
@@ -239,6 +241,6 @@ export function createExamReferenceProject(): ProjectData {
       calculationMethod: "vaporizacion",
       tablaXviiProfileKey: "2_estufa_2_calefon_cocina",
     },
-    updatedAt: "2026-11-12T00:00:00.000Z",
+    updatedAt: EXAM_REFERENCE_UNEDITED_UPDATED_AT,
   };
 }

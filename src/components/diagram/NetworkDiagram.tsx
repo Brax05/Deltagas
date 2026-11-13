@@ -10,22 +10,34 @@ import {
   Download,
   AlertTriangle,
 } from "lucide-react";
+import { APPLIANCE_CATALOG_TABLA_V } from "@/domain/ds66/appliances";
 import { COPPER_PIPE_BY_NOMINAL } from "@/domain/ds66/pipes";
 import type { NetworkCalculationResult } from "@/domain/calculations/network";
 import type { RoomEvaluation } from "@/domain/calculations/rooms";
 import {
+  directionLabelEs,
   directionVector,
   evaluateDirectionsFromPoint,
+  getNextPointLabel,
+  getNextSegmentId,
+  snapVectorToDirectionAndStepCm,
+  validateDiagram,
   type DiagramValidationResult,
 } from "@/domain/diagram";
 import type {
   Appliance,
+  CopperNominalDiameter,
   Direction,
   GasConfigId,
   Point,
   Room,
   Segment,
 } from "@/domain/types";
+import {
+  QuickAddSegmentBar,
+  createInitialQuickAddDraft,
+  type QuickAddDraft,
+} from "@/components/diagram/QuickAddSegmentBar";
 import { RoomQuickEditor } from "@/components/rooms/RoomQuickEditor";
 
 interface NetworkDiagramProps {
@@ -43,11 +55,31 @@ interface NetworkDiagramProps {
   canUndo: boolean;
   canRedo: boolean;
   viewResetKey?: number;
-  onLoadExamExample?: () => void;
   onSelectSegment: (segmentId: string | null) => void;
   onSelectPoint: (pointId: string | null) => void;
-  onQuickAddFromPoint: (fromPointId: string, direction: Direction) => void;
-  onAdjustSegmentLengthCm: (segmentId: string, deltaCm: number) => void;
+  onQuickAddFromPoint: (params: {
+    fromPointId: string;
+    direction: Direction;
+    lengthCm: number;
+    nominalDiameter: CopperNominalDiameter;
+    appliance?: {
+      catalogId: string;
+      name: string;
+      applianceClass: Appliance["applianceClass"];
+      circuitType: Appliance["circuitType"];
+      powerMcalPerHour: number;
+      roomLengthMeters: number;
+      roomWidthMeters: number;
+      roomHeightMeters: number;
+    };
+  }) => void;
+  onMoveSegmentLastPart: (
+    segmentId: string,
+    direction: Direction,
+    lengthCm: number
+  ) => void;
+  onUpdateAppliance?: (appliance: Appliance) => void;
+  onDeleteAppliance?: (applianceId: string) => void;
   onUpdateRoom: (room: Room) => void;
   onCreateAndAssignRoom: (applianceId: string, room: Room) => void;
   onAssignApplianceRoom: (
@@ -75,11 +107,12 @@ export function NetworkDiagram({
   canUndo,
   canRedo,
   viewResetKey,
-  onLoadExamExample,
   onSelectSegment,
   onSelectPoint,
   onQuickAddFromPoint,
-  onAdjustSegmentLengthCm,
+  onMoveSegmentLastPart,
+  onUpdateAppliance,
+  onDeleteAppliance,
   onUpdateRoom,
   onCreateAndAssignRoom,
   onAssignApplianceRoom,
@@ -106,39 +139,193 @@ export function NetworkDiagram({
     setViewTransform((prev) => ({ ...prev, pan: nextPan }));
   };
 
+  type NodeDragState =
+    | {
+        mode: "move-node";
+        pointId: string;
+        segmentId: string;
+        partIndex: number;
+        anchorXM: number;
+        anchorYM: number;
+        originalDirection: Direction;
+        originalLengthCm: number;
+        targetDirection: Direction;
+        targetLengthCm: number;
+        pointerId: number;
+        startClientX: number;
+        startClientY: number;
+        active: boolean;
+      }
+    | {
+        mode: "new-from-regulator";
+        pointId: "S";
+        anchorXM: number;
+        anchorYM: number;
+        targetDirection: Direction;
+        targetLengthCm: number;
+        pointerId: number;
+        startClientX: number;
+        startClientY: number;
+        active: boolean;
+      };
+
   const [editingApplianceId, setEditingApplianceId] = useState<string | null>(
     null
   );
+  const [quickAddDraft, setQuickAddDraft] = useState<QuickAddDraft | null>(
+    null
+  );
+  const [nodeDrag, setNodeDrag] = useState<NodeDragState | null>(null);
+  const nodeDragRef = useRef<NodeDragState | null>(null);
+  nodeDragRef.current = nodeDrag;
+  const holdTimerRef = useRef<number | null>(null);
+  const suppressNextClickRef = useRef(false);
+  const frozenWorldBoxRef = useRef<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
+  const [localHint, setLocalHint] = useState<string | null>(null);
 
   useEffect(() => {
     if (viewResetKey === undefined) return;
     setViewTransform({ zoom: 1, pan: { x: 0, y: 0 } });
     setEditingApplianceId(null);
+    setQuickAddDraft(null);
+    setNodeDrag(null);
+    frozenWorldBoxRef.current = null;
+    setLocalHint(null);
   }, [viewResetKey]);
+
   const [panning, setPanning] = useState<{
     startX: number;
     startY: number;
     origX: number;
     origY: number;
   } | null>(null);
-  const [dragState, setDragState] = useState<{
-    segmentId: string;
-    direction: Direction;
-    startClientX: number;
-    startClientY: number;
-    lastAppliedSteps: number;
-  } | null>(null);
 
-  const { layout } = validation;
+  const previewInfo = useMemo(() => {
+    if (nodeDrag?.active) {
+      if (nodeDrag.mode === "move-node") {
+        const previewSegments = segments.map((seg) => {
+          if (seg.id !== nodeDrag.segmentId) return seg;
+          return {
+            ...seg,
+            parts: seg.parts.map((part, idx) =>
+              idx === nodeDrag.partIndex
+                ? {
+                    direction: nodeDrag.targetDirection,
+                    lengthCm: nodeDrag.targetLengthCm,
+                  }
+                : part
+            ),
+          };
+        });
+        return {
+          previewSegments,
+          previewSegmentId: nodeDrag.segmentId,
+          previewTargetPointId: nodeDrag.pointId,
+          previewDeltaCm: nodeDrag.targetLengthCm - nodeDrag.originalLengthCm,
+          previewNewLengthCm: nodeDrag.targetLengthCm,
+          previewDirection: nodeDrag.targetDirection,
+          isNewSegmentPreview: false,
+        };
+      }
+
+      const candidateId = getNextSegmentId(segments);
+      const candidateToPoint = getNextPointLabel(segments);
+      const previewSegments: Segment[] = [
+        ...segments,
+        {
+          id: candidateId,
+          fromPointId: "S",
+          toPointId: candidateToPoint,
+          nominalDiameter: "1/2",
+          parts: [
+            {
+              direction: nodeDrag.targetDirection,
+              lengthCm: nodeDrag.targetLengthCm,
+            },
+          ],
+        },
+      ];
+      return {
+        previewSegments,
+        previewSegmentId: candidateId,
+        previewTargetPointId: candidateToPoint,
+        previewDeltaCm: nodeDrag.targetLengthCm,
+        previewNewLengthCm: nodeDrag.targetLengthCm,
+        previewDirection: nodeDrag.targetDirection,
+        isNewSegmentPreview: true,
+      };
+    }
+
+    if (quickAddDraft) {
+      const candidateId = getNextSegmentId(segments);
+      const totalCm = Math.max(
+        10,
+        Math.round(
+          (quickAddDraft.lengthMeters * 100 + quickAddDraft.lengthCmExtra) / 10
+        ) * 10
+      );
+      const previewSegments: Segment[] = [
+        ...segments,
+        {
+          id: candidateId,
+          fromPointId: quickAddDraft.fromPointId,
+          toPointId: quickAddDraft.toPointId,
+          nominalDiameter: quickAddDraft.nominalDiameter,
+          parts: [
+            {
+              direction: quickAddDraft.direction,
+              lengthCm: totalCm,
+            },
+          ],
+        },
+      ];
+      return {
+        previewSegments,
+        previewSegmentId: candidateId,
+        previewTargetPointId: quickAddDraft.toPointId,
+        previewDeltaCm: totalCm,
+        previewNewLengthCm: totalCm,
+        previewDirection: quickAddDraft.direction,
+        isNewSegmentPreview: true,
+      };
+    }
+
+    return null;
+  }, [nodeDrag, quickAddDraft, segments]);
+
+  const previewValidation = useMemo(() => {
+    if (!previewInfo) return null;
+    return validateDiagram(previewInfo.previewSegments);
+  }, [previewInfo]);
+
+  const activeSegments = previewInfo?.previewSegments ?? segments;
+  const activeValidation = previewValidation ?? validation;
+  const previewConflictMessage = previewValidation?.valid
+    ? null
+    : (previewValidation?.conflicts[0]?.message ??
+      "El tramo en esa posición generaría un conflicto geométrico.");
+  const previewSegmentId = previewInfo?.previewSegmentId ?? null;
+
+  const { layout } = activeValidation;
 
   // Ubicación y dimensiones visuales de recintos asociados a artefactos
   const roomPlacements = useMemo(() => {
-    const segById = new Map(segments.map((s) => [s.id, s]));
+    const segById = new Map(activeSegments.map((s) => [s.id, s]));
     const roomsById = new Map(rooms.map((r) => [r.id, r]));
     const evalByRoomId = new Map(roomEvaluations.map((e) => [e.roomId, e]));
     const byRoom = new Map<
       string,
-      { room: Room; pts: Point[]; primaryApp: Appliance }
+      {
+        room: Room;
+        pts: Point[];
+        primaryApp: Appliance | null;
+        isPreview?: boolean;
+      }
     >();
 
     for (const app of appliances) {
@@ -156,40 +343,70 @@ export function NetworkDiagram({
       }
     }
 
-    return Array.from(byRoom.values()).map(({ room, pts, primaryApp }) => {
-      const cxM = pts.reduce((s, p) => s + p.xMeters, 0) / pts.length;
-      const cyM = pts.reduce((s, p) => s + p.yMeters, 0) / pts.length;
-      const safeLength =
-        Number.isFinite(room.lengthMeters) && room.lengthMeters > 0
-          ? room.lengthMeters
-          : 3;
-      const safeWidth =
-        Number.isFinite(room.widthMeters) && room.widthMeters > 0
-          ? room.widthMeters
-          : 3;
-      const widthPx = Math.max(64, Math.min(360, safeLength * PX_PER_METER));
-      const heightPx = Math.max(48, Math.min(280, safeWidth * PX_PER_METER));
-      const halfWM = widthPx / PX_PER_METER / 2;
-      const halfHM = heightPx / PX_PER_METER / 2;
-      const evaluation = evalByRoomId.get(room.id) ?? null;
-      return {
-        room,
-        primaryApp,
-        evaluation,
-        cxM,
-        cyM,
-        widthPx,
-        heightPx,
-        minXM: cxM - halfWM,
-        maxXM: cxM + halfWM,
-        minYM: cyM - halfHM,
-        maxYM: cyM + halfHM,
-      };
-    });
-  }, [appliances, segments, rooms, roomEvaluations, layout.points]);
+    if (quickAddDraft?.includeAppliance) {
+      const previewPt = layout.points[quickAddDraft.toPointId];
+      if (previewPt) {
+        const previewRoom: Room = {
+          id: "__preview_room__",
+          name: `Recinto (${quickAddDraft.applianceName || "Nuevo"})`,
+          lengthMeters: Math.max(0.5, quickAddDraft.roomLengthMeters || 3.5),
+          widthMeters: Math.max(0.5, quickAddDraft.roomWidthMeters || 3),
+          heightMeters: Math.max(1, quickAddDraft.roomHeightMeters || 2.4),
+          ventilationType: "directa",
+        };
+        byRoom.set("__preview_room__", {
+          room: previewRoom,
+          pts: [previewPt],
+          primaryApp: null,
+          isPreview: true,
+        });
+      }
+    }
+
+    return Array.from(byRoom.values()).map(
+      ({ room, pts, primaryApp, isPreview }) => {
+        const cxM = pts.reduce((s, p) => s + p.xMeters, 0) / pts.length;
+        const cyM = pts.reduce((s, p) => s + p.yMeters, 0) / pts.length;
+        const safeLength =
+          Number.isFinite(room.lengthMeters) && room.lengthMeters > 0
+            ? room.lengthMeters
+            : 3;
+        const safeWidth =
+          Number.isFinite(room.widthMeters) && room.widthMeters > 0
+            ? room.widthMeters
+            : 3;
+        const widthPx = Math.max(64, Math.min(360, safeLength * PX_PER_METER));
+        const heightPx = Math.max(48, Math.min(280, safeWidth * PX_PER_METER));
+        const halfWM = widthPx / PX_PER_METER / 2;
+        const halfHM = heightPx / PX_PER_METER / 2;
+        const evaluation = evalByRoomId.get(room.id) ?? null;
+        return {
+          room,
+          primaryApp,
+          evaluation,
+          isPreview: Boolean(isPreview),
+          cxM,
+          cyM,
+          widthPx,
+          heightPx,
+          minXM: cxM - halfWM,
+          maxXM: cxM + halfWM,
+          minYM: cyM - halfHM,
+          maxYM: cyM + halfHM,
+        };
+      }
+    );
+  }, [
+    appliances,
+    activeSegments,
+    rooms,
+    roomEvaluations,
+    layout.points,
+    quickAddDraft,
+  ]);
 
   // Mapear coordenadas reales (m) -> coordenadas SVG (y invertido)
-  const worldBox = useMemo(() => {
+  const computedWorldBox = useMemo(() => {
     let boundMinX = Number.isFinite(layout.bounds.minX) ? layout.bounds.minX : 0;
     let boundMaxX = Number.isFinite(layout.bounds.maxX) ? layout.bounds.maxX : 0;
     let boundMinY = Number.isFinite(layout.bounds.minY) ? layout.bounds.minY : 0;
@@ -214,6 +431,11 @@ export function NetworkDiagram({
       h: Math.max(320, maxY - minY),
     };
   }, [layout.bounds, roomPlacements]);
+
+  const worldBox =
+    nodeDrag?.active && frozenWorldBoxRef.current
+      ? frozenWorldBoxRef.current
+      : computedWorldBox;
 
   const worldBoxRef = useRef(worldBox);
   worldBoxRef.current = worldBox;
@@ -286,7 +508,7 @@ export function NetworkDiagram({
 
   const appliancesByPoint = useMemo(() => {
     const map = new Map<string, Appliance[]>();
-    const segById = new Map(segments.map((s) => [s.id, s]));
+    const segById = new Map(activeSegments.map((s) => [s.id, s]));
     for (const app of appliances) {
       const seg = segById.get(app.segmentId);
       if (!seg) continue;
@@ -295,7 +517,7 @@ export function NetworkDiagram({
       map.set(seg.toPointId, list);
     }
     return map;
-  }, [appliances, segments]);
+  }, [appliances, activeSegments]);
 
   const selectedPointDirections = useMemo(() => {
     if (!selectedPointId) return null;
@@ -341,11 +563,329 @@ export function NetworkDiagram({
     [appliances, editingApplianceId]
   );
 
+  const latestRef = useRef({
+    segments,
+    onMoveSegmentLastPart,
+    onSelectSegment,
+    onSelectPoint,
+    zoom,
+    pan,
+  });
+  latestRef.current = {
+    segments,
+    onMoveSegmentLastPart,
+    onSelectSegment,
+    onSelectPoint,
+    zoom,
+    pan,
+  };
+
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current !== null) {
+        window.clearTimeout(holdTimerRef.current);
+      }
+    };
+  }, []);
+
+  const clientToWorldMeters = (clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const ctm = svg.getScreenCTM();
+    if (ctm) {
+      const pt = svg.createSVGPoint();
+      pt.x = clientX;
+      pt.y = clientY;
+      const svgPt = pt.matrixTransform(ctm.inverse());
+      return {
+        xMeters: svgPt.x / PX_PER_METER,
+        yMeters: -svgPt.y / PX_PER_METER,
+      };
+    }
+    const rect = svg.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const wb = worldBoxRef.current;
+    const { zoom: z, pan: p } = latestRef.current;
+    const vw = wb.w / z;
+    const vh = wb.h / z;
+    const cx = wb.x + wb.w / 2 - p.x;
+    const cy = wb.y + wb.h / 2 - p.y;
+    const svgX = cx - vw / 2 + ((clientX - rect.left) / rect.width) * vw;
+    const svgY = cy - vh / 2 + ((clientY - rect.top) / rect.height) * vh;
+    return {
+      xMeters: svgX / PX_PER_METER,
+      yMeters: -svgY / PX_PER_METER,
+    };
+  };
+
+  const isDraggingNode = nodeDrag !== null;
+  useEffect(() => {
+    if (!isDraggingNode) return;
+
+    const handleWindowPointerMove = (ev: PointerEvent) => {
+      const cur = nodeDragRef.current;
+      if (!cur || ev.pointerId !== cur.pointerId) return;
+
+      const movedPx = Math.hypot(
+        ev.clientX - cur.startClientX,
+        ev.clientY - cur.startClientY
+      );
+      let nextActive = cur.active;
+
+      if (!nextActive) {
+        if (movedPx < 4) return;
+        if (holdTimerRef.current !== null) {
+          window.clearTimeout(holdTimerRef.current);
+          holdTimerRef.current = null;
+        }
+        if (!frozenWorldBoxRef.current) {
+          frozenWorldBoxRef.current = worldBoxRef.current;
+        }
+        setQuickAddDraft(null);
+        setEditingApplianceId(null);
+        if (cur.mode === "move-node") {
+          latestRef.current.onSelectSegment(cur.segmentId);
+          latestRef.current.onSelectPoint(cur.pointId);
+        } else {
+          latestRef.current.onSelectPoint("S");
+          latestRef.current.onSelectSegment(null);
+        }
+        nextActive = true;
+      }
+
+      const worldM = clientToWorldMeters(ev.clientX, ev.clientY);
+      if (!worldM) return;
+
+      const dxMeters = worldM.xMeters - cur.anchorXM;
+      const dyMeters = worldM.yMeters - cur.anchorYM;
+      const fallbackDir =
+        cur.mode === "move-node" ? cur.originalDirection : cur.targetDirection;
+      const snapped = snapVectorToDirectionAndStepCm({
+        dxMeters,
+        dyMeters,
+        stepCm: 10,
+        minCm: 10,
+        fallbackDirection: fallbackDir,
+      });
+
+      if (
+        nextActive !== cur.active ||
+        snapped.direction !== cur.targetDirection ||
+        snapped.lengthCm !== cur.targetLengthCm
+      ) {
+        const nextDrag: NodeDragState = {
+          ...cur,
+          active: nextActive,
+          targetDirection: snapped.direction,
+          targetLengthCm: snapped.lengthCm,
+        };
+        nodeDragRef.current = nextDrag;
+        setNodeDrag(nextDrag);
+      }
+    };
+
+    const finishNodeDrag = (ev: PointerEvent, commit: boolean) => {
+      const cur = nodeDragRef.current;
+      if (!cur || ev.pointerId !== cur.pointerId) return;
+
+      if (holdTimerRef.current !== null) {
+        window.clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
+
+      nodeDragRef.current = null;
+      setNodeDrag(null);
+      frozenWorldBoxRef.current = null;
+
+      if (!cur.active) return;
+
+      suppressNextClickRef.current = true;
+      window.setTimeout(() => {
+        suppressNextClickRef.current = false;
+      }, 100);
+
+      if (!commit) return;
+
+      if (cur.mode === "move-node") {
+        if (
+          cur.targetDirection !== cur.originalDirection ||
+          cur.targetLengthCm !== cur.originalLengthCm
+        ) {
+          latestRef.current.onMoveSegmentLastPart(
+            cur.segmentId,
+            cur.targetDirection,
+            cur.targetLengthCm
+          );
+        }
+        return;
+      }
+
+      const movedPx = Math.hypot(
+        ev.clientX - cur.startClientX,
+        ev.clientY - cur.startClientY
+      );
+      if (movedPx >= 8) {
+        setQuickAddDraft(
+          createInitialQuickAddDraft({
+            fromPointId: "S",
+            toPointId: getNextPointLabel(latestRef.current.segments),
+            direction: cur.targetDirection,
+            totalCm: cur.targetLengthCm,
+          })
+        );
+      }
+    };
+
+    const handleWindowPointerUp = (ev: PointerEvent) => finishNodeDrag(ev, true);
+    const handleWindowPointerCancel = (ev: PointerEvent) =>
+      finishNodeDrag(ev, false);
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("pointerup", handleWindowPointerUp);
+    window.addEventListener("pointercancel", handleWindowPointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", handleWindowPointerUp);
+      window.removeEventListener("pointercancel", handleWindowPointerCancel);
+    };
+  }, [isDraggingNode]);
+
+  const startNodePointerDown = (
+    e: React.PointerEvent<SVGElement>,
+    ptId: string,
+    immediateActive = false
+  ) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    e.stopPropagation();
+    setLocalHint(null);
+
+    const pt = validation.layout.points[ptId];
+    if (!pt) return;
+
+    if (ptId === "S") {
+      if (segments.length > 0) {
+        if (holdTimerRef.current !== null) {
+          window.clearTimeout(holdTimerRef.current);
+        }
+        holdTimerRef.current = window.setTimeout(() => {
+          setLocalHint(
+            "El regulador S es el punto fijo de entrada; mantén presionado otro nodo (ej. A, B) para moverlo en saltos de 10 cm."
+          );
+        }, 260);
+        window.addEventListener(
+          "pointerup",
+          () => {
+            if (holdTimerRef.current !== null) {
+              window.clearTimeout(holdTimerRef.current);
+              holdTimerRef.current = null;
+            }
+          },
+          { once: true }
+        );
+        return;
+      }
+
+      const initialRegDrag: NodeDragState = {
+        mode: "new-from-regulator",
+        pointId: "S",
+        anchorXM: 0,
+        anchorYM: 0,
+        targetDirection: "right",
+        targetLengthCm: 100,
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        active: immediateActive,
+      };
+      if (holdTimerRef.current !== null) {
+        window.clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
+      if (immediateActive) {
+        frozenWorldBoxRef.current = worldBoxRef.current;
+        setQuickAddDraft(null);
+        setEditingApplianceId(null);
+      } else {
+        holdTimerRef.current = window.setTimeout(() => {
+          const cur = nodeDragRef.current;
+          if (!cur || cur.pointerId !== e.pointerId || cur.active) return;
+          frozenWorldBoxRef.current = worldBoxRef.current;
+          setQuickAddDraft(null);
+          setEditingApplianceId(null);
+          latestRef.current.onSelectPoint("S");
+          latestRef.current.onSelectSegment(null);
+          const next = { ...cur, active: true };
+          nodeDragRef.current = next;
+          setNodeDrag(next);
+        }, 120);
+      }
+      nodeDragRef.current = initialRegDrag;
+      setNodeDrag(initialRegDrag);
+      return;
+    }
+
+    const ownerSeg = segments.find((s) => s.toPointId === ptId);
+    if (!ownerSeg || ownerSeg.parts.length === 0) return;
+
+    const partIndex = ownerSeg.parts.length - 1;
+    const lastPart = ownerSeg.parts[partIndex]!;
+    const vec = directionVector(lastPart.direction);
+    const anchorXM = pt.xMeters - vec.dx * (lastPart.lengthCm / 100);
+    const anchorYM = pt.yMeters - vec.dy * (lastPart.lengthCm / 100);
+
+    const initialDrag: NodeDragState = {
+      mode: "move-node",
+      pointId: ptId,
+      segmentId: ownerSeg.id,
+      partIndex,
+      anchorXM,
+      anchorYM,
+      originalDirection: lastPart.direction,
+      originalLengthCm: lastPart.lengthCm,
+      targetDirection: lastPart.direction,
+      targetLengthCm: lastPart.lengthCm,
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      active: immediateActive,
+    };
+
+    if (holdTimerRef.current !== null) {
+      window.clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    if (immediateActive) {
+      frozenWorldBoxRef.current = worldBoxRef.current;
+      setQuickAddDraft(null);
+      setEditingApplianceId(null);
+    } else {
+      holdTimerRef.current = window.setTimeout(() => {
+        const cur = nodeDragRef.current;
+        if (!cur || cur.pointerId !== e.pointerId || cur.active) return;
+        frozenWorldBoxRef.current = worldBoxRef.current;
+        setQuickAddDraft(null);
+        setEditingApplianceId(null);
+        if (cur.mode === "move-node") {
+          latestRef.current.onSelectSegment(cur.segmentId);
+          latestRef.current.onSelectPoint(cur.pointId);
+        }
+        const next = { ...cur, active: true };
+        nodeDragRef.current = next;
+        setNodeDrag(next);
+      }, 120);
+    }
+
+    nodeDragRef.current = initialDrag;
+    setNodeDrag(initialDrag);
+  };
+
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.target === svgRef.current) {
       onSelectSegment(null);
       onSelectPoint(null);
       setEditingApplianceId(null);
+      setLocalHint(null);
       setPanning({
         startX: e.clientX,
         startY: e.clientY,
@@ -356,34 +896,10 @@ export function NetworkDiagram({
   };
 
   const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (dragState) {
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const scaleScreenToWorld = (worldBox.w / zoom) / rect.width;
-      const dxMeters =
-        ((e.clientX - dragState.startClientX) * scaleScreenToWorld) /
-        PX_PER_METER;
-      const dyMeters =
-        (-(e.clientY - dragState.startClientY) * scaleScreenToWorld) /
-        PX_PER_METER;
-
-      const vec = directionVector(dragState.direction);
-      const projectedMeters = dxMeters * vec.dx + dyMeters * vec.dy;
-
-      // Estirar de a 10 cm (Sección 9.5)
-      const totalSteps = Math.round(projectedMeters / 0.1);
-      const deltaSteps = totalSteps - dragState.lastAppliedSteps;
-      if (deltaSteps !== 0) {
-        onAdjustSegmentLengthCm(dragState.segmentId, deltaSteps * 10);
-        setDragState({ ...dragState, lastAppliedSteps: totalSteps });
-      }
-      return;
-    }
-
     if (panning) {
       const rect = svgRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const scale = (worldBox.w / zoom) / rect.width;
+      const scale = worldBox.w / zoom / rect.width;
       setPan({
         x: panning.origX + (e.clientX - panning.startX) * scale,
         y: panning.origY + (e.clientY - panning.startY) * scale,
@@ -393,16 +909,20 @@ export function NetworkDiagram({
 
   const handleSvgPointerUp = () => {
     setPanning(null);
-    setDragState(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape" && quickAddDraft) {
+      e.preventDefault();
+      setQuickAddDraft(null);
+      return;
+    }
     if (!selectedSegmentId) return;
     const seg = segments.find((s) => s.id === selectedSegmentId);
-    const lastDir = seg?.parts[seg.parts.length - 1]?.direction;
-    if (!lastDir) return;
+    const lastPart = seg?.parts[seg.parts.length - 1];
+    if (!lastPart) return;
 
-    const vec = directionVector(lastDir);
+    const vec = directionVector(lastPart.direction);
     const stepCm = e.shiftKey ? 10 : 1;
     let delta = 0;
     if (e.key === "ArrowRight") delta = Math.sign(vec.dx) * stepCm;
@@ -412,7 +932,10 @@ export function NetworkDiagram({
 
     if (delta !== 0) {
       e.preventDefault();
-      onAdjustSegmentLengthCm(selectedSegmentId, delta);
+      const nextCm = Math.max(10, lastPart.lengthCm + delta);
+      if (nextCm !== lastPart.lengthCm) {
+        onMoveSegmentLastPart(selectedSegmentId, lastPart.direction, nextCm);
+      }
     }
   };
 
@@ -578,43 +1101,54 @@ export function NetworkDiagram({
               ev && ev.totalPowerKw > 0 && !ev.volumeCompliant
             );
             const isSelectedRoom = Boolean(
-              editingAppliance && editingAppliance.roomId === rp.room.id
+              !rp.isPreview &&
+                editingAppliance &&
+                editingAppliance.roomId === rp.room.id
             );
             const hasLoad = Boolean(ev && ev.totalPowerKw > 0);
-            const fillColor = isInsufficient
-              ? "var(--status-error-bg)"
-              : hasLoad
-                ? "var(--status-ok-bg)"
-                : "var(--bg-secondary)";
-            const strokeColor = isSelectedRoom
-              ? "var(--accent-primary)"
+            const fillColor = rp.isPreview
+              ? "var(--status-ok-bg)"
+              : isInsufficient
+                ? "var(--status-error-bg)"
+                : hasLoad
+                  ? "var(--status-ok-bg)"
+                  : "var(--bg-secondary)";
+            const strokeColor = rp.isPreview
+              ? "var(--status-ok-text)"
+              : isSelectedRoom
+                ? "var(--accent-primary)"
+                : isInsufficient
+                  ? "var(--status-error-text)"
+                  : hasLoad
+                    ? "var(--status-ok-border)"
+                    : "var(--border-control)";
+            const labelColor = rp.isPreview
+              ? "var(--status-ok-text)"
               : isInsufficient
                 ? "var(--status-error-text)"
                 : hasLoad
-                  ? "var(--status-ok-border)"
-                  : "var(--border-control)";
-            const labelColor = isInsufficient
-              ? "var(--status-error-text)"
-              : hasLoad
-                ? "var(--status-ok-text)"
-                : "var(--text-secondary)";
+                  ? "var(--status-ok-text)"
+                  : "var(--text-secondary)";
 
             return (
               <g
                 key={`room-box-${rp.room.id}`}
                 onClick={(e) => {
+                  if (rp.isPreview || !rp.primaryApp) return;
                   e.stopPropagation();
                   setEditingApplianceId(rp.primaryApp.id);
                   onSelectSegment(rp.primaryApp.segmentId);
                   onSelectPoint(null);
                 }}
-                className="cursor-pointer"
+                className={rp.isPreview ? undefined : "cursor-pointer"}
               >
                 <title>
                   {`${rp.room.name}: ${rp.room.lengthMeters}×${rp.room.widthMeters}×${rp.room.heightMeters} m` +
                     (ev
                       ? ` · Vol ${ev.realVolumeM3.toFixed(1)} m³ / Mín ${ev.requiredVolumeM3.toFixed(1)} m³ (${ev.volumeCompliant ? "Cumple" : "NO CUMPLE"})`
-                      : "")}
+                      : rp.isPreview
+                        ? ` · Vista previa ${(rp.room.lengthMeters * rp.room.widthMeters * rp.room.heightMeters).toFixed(1)} m³`
+                        : "")}
                 </title>
                 <rect
                   x={rx}
@@ -623,10 +1157,25 @@ export function NetworkDiagram({
                   height={rp.heightPx}
                   rx={4}
                   fill={fillColor}
-                  fillOpacity={isInsufficient ? 0.55 : 0.42}
+                  fillOpacity={rp.isPreview ? 0.35 : isInsufficient ? 0.55 : 0.42}
                   stroke={strokeColor}
-                  strokeWidth={isSelectedRoom ? 2.5 : isInsufficient ? 2.2 : 1.4}
-                  className={isInsufficient ? "animate-recinto-error" : undefined}
+                  strokeWidth={
+                    rp.isPreview
+                      ? 2
+                      : isSelectedRoom
+                        ? 2.5
+                        : isInsufficient
+                          ? 2.2
+                          : 1.4
+                  }
+                  strokeDasharray={rp.isPreview ? "5 3" : undefined}
+                  className={
+                    rp.isPreview
+                      ? "animate-segment-green"
+                      : isInsufficient
+                        ? "animate-recinto-error"
+                        : undefined
+                  }
                 />
                 {isSelectedRoom && (
                   <rect
@@ -649,7 +1198,13 @@ export function NetworkDiagram({
                   textAnchor="middle"
                   fontSize={10}
                   fontWeight={700}
-                  fill={isInsufficient ? "var(--status-error-text)" : "var(--accent-copper)"}
+                  fill={
+                    rp.isPreview
+                      ? "var(--status-ok-text)"
+                      : isInsufficient
+                        ? "var(--status-error-text)"
+                        : "var(--accent-copper)"
+                  }
                   paintOrder="stroke"
                   stroke="var(--bg-surface)"
                   strokeWidth={3}
@@ -663,7 +1218,13 @@ export function NetworkDiagram({
                   dominantBaseline="middle"
                   fontSize={10}
                   fontWeight={700}
-                  fill={isInsufficient ? "var(--status-error-text)" : "var(--accent-copper)"}
+                  fill={
+                    rp.isPreview
+                      ? "var(--status-ok-text)"
+                      : isInsufficient
+                        ? "var(--status-error-text)"
+                        : "var(--accent-copper)"
+                  }
                   paintOrder="stroke"
                   stroke="var(--bg-surface)"
                   strokeWidth={3}
@@ -683,6 +1244,21 @@ export function NetworkDiagram({
                 >
                   {rp.room.name}
                 </text>
+                {rp.isPreview && (
+                  <text
+                    x={rx + rp.widthPx / 2}
+                    y={ry + rp.heightPx - 6}
+                    textAnchor="middle"
+                    fontSize={8.2}
+                    fontWeight={700}
+                    fill="var(--status-ok-text)"
+                    paintOrder="stroke"
+                    stroke="var(--bg-surface)"
+                    strokeWidth={2}
+                  >
+                    {`Vista previa ${(rp.room.lengthMeters * rp.room.widthMeters * rp.room.heightMeters).toFixed(1)} m³`}
+                  </text>
+                )}
                 {ev && hasLoad && (
                   <text
                     x={rx + rp.widthPx / 2}
@@ -706,17 +1282,25 @@ export function NetworkDiagram({
           })}
 
           {/* Tramos cardinales y diagonales */}
-          {segments.map((seg) => {
+          {activeSegments.map((seg) => {
             const segSpans = layout.spans.filter((sp) => sp.segmentId === seg.id);
             if (segSpans.length === 0) return null;
 
             const segCalc = calculation.segments[seg.id];
+            const isPreviewSeg = previewSegmentId === seg.id;
+            const hasPreviewConflict = Boolean(
+              isPreviewSeg && previewConflictMessage
+            );
             const isSelected = selectedSegmentId === seg.id;
             const isBlocking = blockingSegmentId === seg.id;
             const pipeSpec = COPPER_PIPE_BY_NOMINAL[seg.nominalDiameter];
 
             let strokeColor = "var(--text-secondary)";
-            if (isBlocking) {
+            if (hasPreviewConflict) {
+              strokeColor = "var(--status-error-text)";
+            } else if (isPreviewSeg) {
+              strokeColor = "var(--status-ok-text)";
+            } else if (isBlocking) {
               strokeColor = "var(--status-error-text)";
             } else if (segCalc?.hasEnoughData) {
               strokeColor = segCalc.subtreeCompliant
@@ -731,7 +1315,9 @@ export function NetworkDiagram({
               .map((p) => `${p.x},${p.y}`)
               .join(" ");
 
-            const totalMeters = segSpans.reduce((a, b) => a + b.lengthMeters, 0);
+            const totalMeters = Number(
+              segSpans.reduce((a, b) => a + b.lengthMeters, 0).toFixed(2)
+            );
             const lastSpan = segSpans[segSpans.length - 1]!;
             const endSvg = toSvg(lastSpan.x2, lastSpan.y2);
 
@@ -740,10 +1326,11 @@ export function NetworkDiagram({
                 key={seg.id}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (isPreviewSeg || suppressNextClickRef.current) return;
                   onSelectSegment(seg.id);
                   onSelectPoint(null);
                 }}
-                className="cursor-pointer"
+                className={isPreviewSeg ? undefined : "cursor-pointer"}
               >
                 <title>{`${seg.id}: ${totalMeters} m · ${pipeSpec.label}`}</title>
                 {/* Halo táctil transparente para seleccionar fácil en celular */}
@@ -754,7 +1341,7 @@ export function NetworkDiagram({
                   strokeWidth={18}
                   strokeLinejoin="round"
                 />
-                {isSelected && (
+                {isSelected && !isPreviewSeg && (
                   <polyline
                     points={pointsAttr}
                     fill="none"
@@ -768,9 +1355,21 @@ export function NetworkDiagram({
                   points={pointsAttr}
                   fill="none"
                   stroke={strokeColor}
-                  strokeWidth={pipeSpec.diagramStrokePx}
+                  strokeWidth={
+                    isPreviewSeg
+                      ? Math.max(3.5, pipeSpec.diagramStrokePx + 1.5)
+                      : pipeSpec.diagramStrokePx
+                  }
+                  strokeDasharray={hasPreviewConflict ? "6 4" : undefined}
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  className={
+                    isPreviewSeg
+                      ? hasPreviewConflict
+                        ? "animate-recinto-error"
+                        : "animate-segment-green"
+                      : undefined
+                  }
                 />
 
                 {/* Etiqueta de tramo y largo real + diámetro */}
@@ -796,9 +1395,10 @@ export function NetworkDiagram({
                       : nx > 0
                         ? "start"
                         : "end";
+                  const spanMeters = Number(sp.lengthMeters.toFixed(2));
                   const labelText =
                     segSpans.length > 1
-                      ? `${seg.id} · ${sp.lengthMeters} m`
+                      ? `${seg.id} · ${spanMeters} m`
                       : `${seg.id} · ${totalMeters} m · ${pipeSpec.label}`;
                   return (
                     <text
@@ -808,9 +1408,15 @@ export function NetworkDiagram({
                       textAnchor={anchor}
                       dominantBaseline="middle"
                       fontSize={10}
-                      fontWeight={isSelected ? 700 : 600}
+                      fontWeight={isSelected || isPreviewSeg ? 700 : 600}
                       fill={
-                        isSelected ? "var(--accent-link)" : "var(--text-primary)"
+                        hasPreviewConflict
+                          ? "var(--status-error-text)"
+                          : isPreviewSeg
+                            ? "var(--status-ok-text)"
+                            : isSelected
+                              ? "var(--accent-link)"
+                              : "var(--text-primary)"
                       }
                       paintOrder="stroke"
                       stroke="var(--bg-surface)"
@@ -822,7 +1428,7 @@ export function NetworkDiagram({
                 })}
 
                 {/* Asa de estiramiento cuando el tramo está seleccionado (Sección 9.5) */}
-                {isSelected && (
+                {isSelected && !isPreviewSeg && !nodeDrag?.active && (
                   <circle
                     cx={endSvg.x}
                     cy={endSvg.y}
@@ -832,16 +1438,9 @@ export function NetworkDiagram({
                     stroke="var(--accent-primary)"
                     strokeWidth={2}
                     className="cursor-move"
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      setDragState({
-                        segmentId: seg.id,
-                        direction: lastSpan.direction,
-                        startClientX: e.clientX,
-                        startClientY: e.clientY,
-                        lastAppliedSteps: 0,
-                      });
-                    }}
+                    onPointerDown={(e) =>
+                      startNodePointerDown(e, seg.toPointId, true)
+                    }
                   />
                 )}
               </g>
@@ -854,23 +1453,60 @@ export function NetworkDiagram({
             const ptApps = appliancesByPoint.get(pt.id) ?? [];
             const isSelectedPt = selectedPointId === pt.id;
             const hasAppliance = ptApps.length > 0;
+            const isBeingDraggedPt = Boolean(
+              nodeDrag?.active && nodeDrag.pointId === pt.id
+            );
+            const isPreviewTargetPt =
+              Boolean(quickAddDraft && quickAddDraft.toPointId === pt.id) ||
+              Boolean(
+                nodeDrag?.active &&
+                  nodeDrag.mode === "new-from-regulator" &&
+                  pt.id === getNextPointLabel(segments)
+              );
 
             if (pt.isRegulator) {
               return (
                 <g
                   key={pt.id}
+                  data-node-id={pt.id}
+                  onPointerDown={(e) => startNodePointerDown(e, pt.id)}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (suppressNextClickRef.current) return;
                     onSelectPoint(pt.id);
                     onSelectSegment(null);
                   }}
-                  className="cursor-pointer"
+                  className={
+                    segments.length === 0
+                      ? "cursor-grab active:cursor-grabbing"
+                      : "cursor-pointer"
+                  }
                 >
+                  <title>
+                    {segments.length === 0
+                      ? "Presiona para abrir puertos (+) o mantén presionado y arrastra para crear el primer tramo en saltos de 10 cm"
+                      : "Regulador (0) · Presiona para abrir puertos (+)"}
+                  </title>
+                  {isBeingDraggedPt && (
+                    <circle
+                      cx={pos.x}
+                      cy={pos.y}
+                      r={17}
+                      fill="none"
+                      stroke="var(--status-ok-text)"
+                      strokeWidth={2.5}
+                      className="animate-segment-green"
+                    />
+                  )}
                   <circle
                     cx={pos.x}
                     cy={pos.y}
                     r={12}
-                    fill="var(--accent-primary)"
+                    fill={
+                      isBeingDraggedPt
+                        ? "var(--status-ok-text)"
+                        : "var(--accent-primary)"
+                    }
                     stroke="var(--bg-surface)"
                     strokeWidth={2}
                   />
@@ -941,20 +1577,39 @@ export function NetworkDiagram({
                 editingAppliance &&
                   ptApps.some((a) => a.id === editingAppliance.id)
               );
+              const shortLabels = ptApps.map((a) => {
+                if (!a.id.startsWith("app-") && a.id.length <= 6) {
+                  return a.id;
+                }
+                const clean = (a.name || "Artefacto")
+                  .replace(/\s*\([^)]*Mcal\/h\)\s*$/i, "")
+                  .trim();
+                return clean.length > 16 ? `${clean.slice(0, 15)}…` : clean;
+              });
+              const cardTitle = `${shortLabels.join(" + ")} · ${totalMcal} Mcal/h`;
+              const cardWidth = Math.max(
+                126,
+                Math.min(188, Math.ceil(cardTitle.length * 5.6 + 18))
+              );
 
               return (
                 <g
                   key={pt.id}
+                  data-node-id={pt.id}
+                  onPointerDown={(e) => startNodePointerDown(e, pt.id)}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (suppressNextClickRef.current) return;
                     setEditingApplianceId(firstApp.id);
                     onSelectSegment(firstApp.segmentId);
                     onSelectPoint(pt.id);
                   }}
-                  className="cursor-pointer"
+                  className={
+                    isBeingDraggedPt ? "cursor-grabbing" : "cursor-pointer"
+                  }
                 >
                   <title>
-                    {`${ptApps.map((a) => a.name).join(", ")} · Presionar para editar tamaño de recinto`}
+                    {`${ptApps.map((a) => a.name).join(", ")} · Presiona para editar tamaño de recinto · Mantén presionado para mover en saltos de 10 cm`}
                   </title>
                   <line
                     x1={pos.x}
@@ -964,21 +1619,38 @@ export function NetworkDiagram({
                     stroke="var(--border-control)"
                     strokeWidth={1}
                   />
+                  {isBeingDraggedPt && (
+                    <circle
+                      cx={pos.x}
+                      cy={pos.y}
+                      r={13}
+                      fill="none"
+                      stroke="var(--status-ok-text)"
+                      strokeWidth={2.5}
+                      className="animate-segment-green"
+                    />
+                  )}
                   <circle
                     cx={pos.x}
                     cy={pos.y}
-                    r={isEditingThisPoint ? 6.5 : 5}
-                    fill={statusFill}
-                    stroke={
-                      isEditingThisPoint ? "var(--accent-primary)" : statusText
+                    r={isBeingDraggedPt ? 8 : isEditingThisPoint ? 6.5 : 5}
+                    fill={
+                      isBeingDraggedPt ? "var(--status-ok-text)" : statusFill
                     }
-                    strokeWidth={2}
+                    stroke={
+                      isBeingDraggedPt
+                        ? "var(--bg-surface)"
+                        : isEditingThisPoint
+                          ? "var(--accent-primary)"
+                          : statusText
+                    }
+                    strokeWidth={isBeingDraggedPt ? 2.2 : 2}
                   />
                   <g transform={`translate(${boxX}, ${boxY - 16})`}>
                     <rect
                       x={0}
                       y={0}
-                      width={126}
+                      width={cardWidth}
                       height={32}
                       rx={5}
                       fill="var(--bg-surface)"
@@ -1004,12 +1676,12 @@ export function NetworkDiagram({
                       fontWeight={700}
                       fill="var(--text-primary)"
                     >
-                      {ptApps.map((a) => a.id).join("+")} · {totalMcal} Mcal/h
+                      {cardTitle}
                     </text>
                     <rect
                       x={7}
                       y={15}
-                      width={113}
+                      width={cardWidth - 13}
                       height={13}
                       rx={3.5}
                       fill={statusFill}
@@ -1059,28 +1731,72 @@ export function NetworkDiagram({
             return (
               <g
                 key={pt.id}
+                data-node-id={pt.id}
+                onPointerDown={(e) => {
+                  if (isPreviewTargetPt) return;
+                  startNodePointerDown(e, pt.id);
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (isPreviewTargetPt || suppressNextClickRef.current) return;
                   onSelectPoint(pt.id);
                   onSelectSegment(null);
                 }}
-                className="cursor-pointer"
+                className={
+                  isPreviewTargetPt
+                    ? undefined
+                    : isBeingDraggedPt
+                      ? "cursor-grabbing"
+                      : "cursor-grab active:cursor-grabbing"
+                }
               >
+                <title>
+                  {isPreviewTargetPt
+                    ? `Nuevo punto destino ${pt.label} (vista previa)`
+                    : `Nodo ${pt.label} · Toca para puertos (+) o mantén presionado y arrastra en saltos de 10 cm`}
+                </title>
+                {(isBeingDraggedPt || isPreviewTargetPt) && (
+                  <circle
+                    cx={pos.x}
+                    cy={pos.y}
+                    r={13}
+                    fill="none"
+                    stroke="var(--status-ok-text)"
+                    strokeWidth={2.5}
+                    className="animate-segment-green"
+                  />
+                )}
                 <circle
                   cx={pos.x}
                   cy={pos.y}
-                  r={isSelectedPt ? 7 : 4.5}
-                  fill={isSelectedPt ? "var(--accent-primary)" : "var(--text-primary)"}
+                  r={
+                    isPreviewTargetPt || isBeingDraggedPt
+                      ? 8
+                      : isSelectedPt
+                        ? 7
+                        : 5
+                  }
+                  fill={
+                    isPreviewTargetPt || isBeingDraggedPt
+                      ? "var(--status-ok-text)"
+                      : isSelectedPt
+                        ? "var(--accent-primary)"
+                        : "var(--text-primary)"
+                  }
                   stroke="var(--bg-surface)"
-                  strokeWidth={1.5}
+                  strokeWidth={isPreviewTargetPt || isBeingDraggedPt ? 2.2 : 1.5}
                 />
                 <text
                   x={pos.x}
-                  y={pos.y - 12}
+                  y={pos.y - 14}
                   textAnchor="middle"
                   fontSize={10.5}
                   fontWeight={700}
-                  fill="var(--text-primary)"
+                  fill={
+                    isPreviewTargetPt || isBeingDraggedPt
+                      ? "var(--status-ok-text)"
+                      : "var(--text-primary)"
+                  }
                   paintOrder="stroke"
                   stroke="var(--bg-surface)"
                   strokeWidth={3}
@@ -1092,7 +1808,8 @@ export function NetworkDiagram({
           })}
 
           {/* Botones "+" en las 8 direcciones libres (cardinales y diagonales) del punto seleccionado */}
-          {selectedPointId &&
+          {!nodeDrag?.active &&
+            selectedPointId &&
             layout.points[selectedPointId] &&
             selectedPointDirections &&
             selectedPointDirections.options.map((opt) => {
@@ -1129,23 +1846,48 @@ export function NetworkDiagram({
                 );
               }
 
+              const isPortActive = Boolean(
+                quickAddDraft &&
+                  quickAddDraft.fromPointId === selectedPointId &&
+                  quickAddDraft.direction === opt.direction
+              );
+
               return (
                 <g
                   key={`port-${opt.direction}`}
+                  data-port-dir={opt.direction}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onQuickAddFromPoint(selectedPointId, opt.direction);
+                    setLocalHint(null);
+                    setEditingApplianceId(null);
+                    setQuickAddDraft(
+                      createInitialQuickAddDraft({
+                        fromPointId: selectedPointId,
+                        toPointId: getNextPointLabel(segments),
+                        direction: opt.direction,
+                        totalCm: opt.suggestedLengthCm,
+                      })
+                    );
                   }}
                   className="cursor-pointer"
                 >
-                  <title>{`Agregar tramo hacia ${opt.label}`}</title>
+                  <title>
+                    {opt.maxLengthCm
+                      ? `Agregar tramo hacia ${opt.label} (hasta ${(opt.maxLengthCm / 100).toFixed(2)} m libre antes de otro tramo)`
+                      : `Agregar tramo hacia ${opt.label} (solicita medida, diámetro y recinto)`}
+                  </title>
                   <circle
                     cx={bx}
                     cy={by}
-                    r={8.5}
-                    fill="var(--accent-primary)"
+                    r={isPortActive ? 10 : 8.5}
+                    fill={
+                      isPortActive
+                        ? "var(--status-ok-text)"
+                        : "var(--accent-primary)"
+                    }
                     stroke="var(--bg-surface)"
                     strokeWidth={1.5}
+                    className={isPortActive ? "animate-segment-green" : undefined}
                   />
                   <text
                     x={bx}
@@ -1161,23 +1903,105 @@ export function NetworkDiagram({
                 </g>
               );
             })}
+          {/* Etiqueta verde directamente arriba del nodo activo sumando/mostrando distancia en saltos de 10 cm */}
+          {previewInfo &&
+            (() => {
+              const targetPt = layout.points[previewInfo.previewTargetPointId];
+              if (!targetPt) return null;
+              const targetPos = toSvg(targetPt.xMeters, targetPt.yMeters);
+              const totalM = (previewInfo.previewNewLengthCm / 100).toFixed(2);
+              const deltaM = (
+                Math.abs(previewInfo.previewDeltaCm) / 100
+              ).toFixed(2);
+              let badgeText = "";
+              if (previewConflictMessage) {
+                badgeText = `⚠ ${previewConflictMessage}`;
+              } else if (previewInfo.isNewSegmentPreview) {
+                badgeText = `+${totalM} m · ${directionLabelEs(previewInfo.previewDirection)}`;
+              } else if (previewInfo.previewDeltaCm === 0) {
+                badgeText = `${totalM} m · Arrastra (±10 cm)`;
+              } else {
+                const sign = previewInfo.previewDeltaCm > 0 ? "+" : "-";
+                badgeText = `${sign}${deltaM} m · Largo ${totalM} m`;
+              }
+              const badgeW = Math.max(132, badgeText.length * 6.4 + 18);
+              return (
+                <g
+                  data-testid="node-distance-badge"
+                  transform={`translate(${targetPos.x}, ${targetPos.y - 44})`}
+                  pointerEvents="none"
+                >
+                  <rect
+                    x={-badgeW / 2}
+                    y={0}
+                    width={badgeW}
+                    height={22}
+                    rx={6}
+                    fill={
+                      previewConflictMessage
+                        ? "var(--status-error-bg)"
+                        : "var(--status-ok-bg)"
+                    }
+                    stroke={
+                      previewConflictMessage
+                        ? "var(--status-error-text)"
+                        : "var(--status-ok-text)"
+                    }
+                    strokeWidth={1.6}
+                    className={
+                      previewConflictMessage
+                        ? "animate-recinto-error"
+                        : "animate-segment-green"
+                    }
+                  />
+                  <polygon
+                    points="-5,22 5,22 0,28"
+                    fill={
+                      previewConflictMessage
+                        ? "var(--status-error-text)"
+                        : "var(--status-ok-text)"
+                    }
+                  />
+                  <text
+                    x={0}
+                    y={14.5}
+                    textAnchor="middle"
+                    fontSize={10}
+                    fontWeight={800}
+                    fill={
+                      previewConflictMessage
+                        ? "var(--status-error-text)"
+                        : "var(--status-ok-text)"
+                    }
+                  >
+                    {badgeText}
+                  </text>
+                </g>
+              );
+            })()}
         </svg>
 
-        {segments.length === 0 && (
-          <div className="no-print absolute inset-x-4 top-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-pizarra-border bg-pizarra-surface/95 px-3 py-2 text-xs shadow-sm">
+        {segments.length === 0 && !quickAddDraft && !nodeDrag?.active && (
+          <div className="no-print absolute inset-x-4 top-4 rounded-lg border border-pizarra-border bg-pizarra-surface/95 px-3 py-2 text-xs shadow-sm">
             <span className="text-pizarra-subtext">
-              Sin tramos cargados. Toca el regulador <strong>S</strong> o usa{" "}
+              Sin tramos cargados. Toca el regulador <strong>S</strong> para
+              elegir un puerto <strong>+</strong>, mantén presionado{" "}
+              <strong>S</strong> y arrastra en saltos de 10 cm, o usa{" "}
               <strong>+ Agregar tramo</strong>.
             </span>
-            {onLoadExamExample && (
-              <button
-                type="button"
-                onClick={onLoadExamExample}
-                className="rounded-md bg-pizarra-action px-2.5 py-1 text-xs font-semibold text-pizarra-action-text hover:bg-pizarra-action-hover"
-              >
-                Cargar ejemplo del examen
-              </button>
-            )}
+          </div>
+        )}
+
+        {localHint && !nodeDrag?.active && (
+          <div className="no-print absolute inset-x-4 top-3 flex items-center justify-between gap-2 rounded-lg border border-pizarra-border bg-pizarra-surface/95 px-3 py-2 text-xs text-pizarra-text shadow-sm">
+            <span>{localHint}</span>
+            <button
+              type="button"
+              onClick={() => setLocalHint(null)}
+              className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-pizarra-subtext hover:bg-pizarra-control-hover"
+            >
+              Cerrar
+            </button>
           </div>
         )}
 
@@ -1195,6 +2019,59 @@ export function NetworkDiagram({
         </div>
       </div>
 
+      {quickAddDraft && (
+        <QuickAddSegmentBar
+          draft={quickAddDraft}
+          conflictMessage={previewConflictMessage}
+          onChange={setQuickAddDraft}
+          onCancel={() => setQuickAddDraft(null)}
+          onConfirm={() => {
+            const totalCm = Math.max(
+              10,
+              Math.round(
+                (quickAddDraft.lengthMeters * 100 +
+                  quickAddDraft.lengthCmExtra) /
+                  10
+              ) * 10
+            );
+            const catalogSpec = APPLIANCE_CATALOG_TABLA_V.find(
+              (c) => c.id === quickAddDraft.catalogId
+            );
+            onQuickAddFromPoint({
+              fromPointId: quickAddDraft.fromPointId,
+              direction: quickAddDraft.direction,
+              lengthCm: totalCm,
+              nominalDiameter: quickAddDraft.nominalDiameter,
+              appliance: quickAddDraft.includeAppliance
+                ? {
+                    catalogId: quickAddDraft.catalogId,
+                    name: quickAddDraft.applianceName.trim() || "Artefacto",
+                    applianceClass: catalogSpec?.applianceClass ?? "otro",
+                    circuitType: catalogSpec?.defaultCircuitType ?? "A",
+                    powerMcalPerHour: Math.max(
+                      0.5,
+                      quickAddDraft.powerMcalPerHour || 8
+                    ),
+                    roomLengthMeters: Math.max(
+                      0.5,
+                      quickAddDraft.roomLengthMeters || 3.5
+                    ),
+                    roomWidthMeters: Math.max(
+                      0.5,
+                      quickAddDraft.roomWidthMeters || 3.0
+                    ),
+                    roomHeightMeters: Math.max(
+                      1,
+                      quickAddDraft.roomHeightMeters || 2.4
+                    ),
+                  }
+                : undefined,
+            });
+            setQuickAddDraft(null);
+          }}
+        />
+      )}
+
       {editingAppliance && (
         <div className="no-print">
           <RoomQuickEditor
@@ -1202,6 +2079,8 @@ export function NetworkDiagram({
             appliance={editingAppliance}
             rooms={rooms}
             roomEvaluations={roomEvaluations}
+            onUpdateAppliance={onUpdateAppliance}
+            onDeleteAppliance={onDeleteAppliance}
             onUpdateRoom={onUpdateRoom}
             onCreateAndAssignRoom={onCreateAndAssignRoom}
             onAssignApplianceRoom={onAssignApplianceRoom}
@@ -1211,7 +2090,7 @@ export function NetworkDiagram({
       )}
 
       <div className="no-print border-t border-pizarra-border bg-pizarra-secondary px-3 py-1.5 text-[11px] text-pizarra-subtext">
-        Presiona cualquier cuadro de recinto o artefacto para editar alto, largo y ancho (parpadea en rojo si no cumple el mínimo DS 66) · Toca un tramo para ajustar diámetro/largo o quiebres · Rueda del ratón para hacer zoom y arrastra el fondo para mover.
+        Toca un punto y su puerto (+) para ingresar medida, diámetro y recinto antes de generar · Mantén presionado cualquier nodo para moverlo manualmente en saltos de 10 cm (parpadea en verde mostrando el nuevo tamaño) · Rueda del ratón para hacer zoom.
       </div>
     </div>
   );
