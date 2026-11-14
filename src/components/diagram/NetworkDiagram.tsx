@@ -1017,7 +1017,7 @@ export function NetworkDiagram({
       <div className="no-print flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-pizarra-border bg-pizarra-secondary px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-pizarra-text sm:text-sm">
-            Diagrama a escala real (Módulo 5)
+            Diagrama de red a escala real (DS 66)
           </span>
           <span className="rounded border border-pizarra-border bg-pizarra-surface px-2 py-0.5 text-[11px] font-semibold tabular-nums text-pizarra-subtext">
             {segments.length} tramos · {appliances.length} artefactos

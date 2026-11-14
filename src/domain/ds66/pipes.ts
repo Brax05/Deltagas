@@ -3,7 +3,7 @@ import type { CopperNominalDiameter } from "@/domain/types";
 export interface CopperPipeSpec {
   nominal: CopperNominalDiameter;
   label: string;
-  /** Diámetro exterior real (mm) - ASTM B88 / NCh 951 */
+  /** Diámetro exterior real (mm) según DS 66 Tabla IX */
   outerDiameterMm: number;
   /** Espesor de pared Tipo "L" (mm) */
   wallThicknessMm: number;
@@ -11,9 +11,9 @@ export interface CopperPipeSpec {
   innerDiameterMm: number;
   /** Diámetro interior Di (cm) */
   innerDiameterCm: number;
-  /** Factor de fricción K (Sección 5.1.10 / Tabla IX) */
+  /** Factor de fricción K (DS 66 Art. 46 / Tabla IX) */
   frictionFactorK: number;
-  /** Grosor visual en px para el diagrama a escala (Sección 9.5) */
+  /** Grosor visual en px para el diagrama a escala */
   diagramStrokePx: number;
 }
 

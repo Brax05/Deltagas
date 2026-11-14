@@ -74,7 +74,7 @@ export function RoomsTab({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-bold text-pizarra-text">
-              Módulo 2 · Evaluación de recintos y ventilaciones (DS 66)
+              DS 66 Art. 70 · Evaluación de recintos y ventilaciones
             </h2>
             <p className="mt-0.5 text-xs text-pizarra-subtext">
               Volumen bruto mínimo (Tabla XX y fórmula f.8 para estufas), superficie libre de ventilación (Tabla XXI) y altura de celosías (Tabla XXII ·{" "}

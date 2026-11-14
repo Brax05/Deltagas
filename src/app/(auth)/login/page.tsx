@@ -34,7 +34,7 @@ export default function LoginPage() {
 
     if (mode === "register" && password.length < 12) {
       setError(
-        "La contraseña debe tener al menos 12 caracteres (política de seguridad Sección 13.1)."
+        "La contraseña debe tener al menos 12 caracteres por seguridad."
       );
       return;
     }

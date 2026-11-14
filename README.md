@@ -18,7 +18,7 @@ Aplicación web de apoyo técnico para el cálculo hidráulico, trazado geométr
 - **Verificación de recintos, hermeticidad y cilindros GLP:**
   - Evaluación de volumen bruto mínimo (Tabla XX y fórmula `f.8` para estufas) y aberturas de ventilación (Tablas XXI y XXII).
   - Hoja referencial para prueba de hermeticidad (Art. 78.3.5) y cálculo de dotación de cilindros GLP (Tablas XVII y XVIII).
-- **Diagramas de ejemplo y respaldo local:** inicia con un lienzo limpio listo para trazar y permite cargar desde **Diagramas de ejemplo** el **Ejemplo 1** (red GLP de 5 tramos y 39 Mcal/h) o el **Ejemplo 2** (caso de referencia del examen DS 66 - Arica), manteniendo guardado automático en navegador (`localStorage`) con saneamiento de borradores, además de rutas listas para integrar **Supabase** (Auth, Postgres con RLS y Storage).
+- **Diagramas de ejemplo y respaldo local:** inicia con un lienzo limpio listo para trazar y permite cargar desde **Diagramas de ejemplo** el **Ejemplo 1** (red residencial GLP de 5 tramos y 31 Mcal/h según Tabla V) o el **Ejemplo 2** (red residencial ramificada GLP de 11 tramos y 50 Mcal/h según Tabla V), manteniendo guardado automático en navegador (`localStorage`) con saneamiento de borradores, además de rutas listas para integrar **Supabase** (Auth, Postgres con RLS y Storage).
 - **Sistema visual "Ingeniería Pizarra" + Modo Oscuro:** paleta sobria de alto contraste (neutros fríos en modo claro y pizarra nocturna en modo oscuro mediante el botón flotante inferior derecho).
 
 ---
@@ -28,8 +28,8 @@ Aplicación web de apoyo técnico para el cálculo hidráulico, trazado geométr
 ```text
 .
 ├── docs/
-│   ├── architecture.md               # Visión arquitectónica v2 del proyecto
-│   └── normative-pending.md          # Matriz de definiciones normativas y de producto
+│   ├── architecture.md               # Visión arquitectónica del proyecto (DS 66)
+│   └── normative-pending.md          # Matriz de trazabilidad normativa DS 66
 ├── src/
 │   ├── app/                          # Rutas App Router, estilos y endpoints API
 │   │   ├── (auth)/login/page.tsx     # Acceso y registro (Supabase Auth opcional)
@@ -81,9 +81,9 @@ Aplicación web de apoyo técnico para el cálculo hidráulico, trazado geométr
 │   │   │   ├── pressure-tables.ts    # Tablas 1/5 y fórmula de Pole modificada
 │   │   │   └── rooms.ts              # Tablas XX, XXI, XXII y altura por defecto de recintos
 │   │   ├── fixtures/
-│   │   │   ├── exam-reference.ts     # Ejemplo 2: caso completo de referencia (Examen DS 66 - Arica)
-│   │   │   ├── examples.ts           # Catálogo de diagramas de ejemplo cargables desde la UI
-│   │   │   └── module4-example.ts    # Ejemplo 1: red GLP de 5 tramos y 3 artefactos (39 Mcal/h)
+│   │   │   ├── examples.ts              # Catálogo de diagramas de ejemplo cargables desde la UI
+│   │   │   ├── residential-basic.ts     # Ejemplo 1: red residencial GLP de 5 tramos (31 Mcal/h)
+│   │   │   └── residential-extended.ts  # Ejemplo 2: red residencial ramificada GLP de 11 tramos (50 Mcal/h)
 │   │   ├── validation/
 │   │   │   └── schemas.ts            # Esquemas Zod compartidos entre cliente y API
 │   │   └── types.ts                  # Tipos base del dominio (Point, Segment, Appliance, Room, ProjectData)

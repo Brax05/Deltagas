@@ -56,7 +56,7 @@ interface NetworkPanelProps {
   roomEvaluations: RoomEvaluation[];
   calculation: NetworkCalculationResult;
   selectedSegmentId: string | null;
-  onChangeGasType: (gasType: GasConfigId) => void;
+  onEditGasType: () => void;
   onSelectSegment: (segmentId: string | null) => void;
   onAddSegmentWithAppliance: (params: {
     segment: Segment;
@@ -88,7 +88,7 @@ export function NetworkPanel({
   roomEvaluations,
   calculation,
   selectedSegmentId,
-  onChangeGasType,
+  onEditGasType,
   onSelectSegment,
   onAddSegmentWithAppliance,
   onSetSingleLengthCm,
@@ -208,24 +208,27 @@ export function NetworkPanel({
 
   return (
     <div className="space-y-3">
-      {/* Selector de gas y botón caso de examen */}
-      <div className="rounded-xl border border-pizarra-border bg-pizarra-surface p-3 shadow-sm">
-        <div>
-          <label className="block text-[11px] font-semibold uppercase tracking-wide text-pizarra-subtext">
-            Tipo de gas y PCS (Tabla VI)
-          </label>
-          <select
-            value={gasType}
-            onChange={(e) => onChangeGasType(e.target.value as GasConfigId)}
-            className="mt-1 w-full rounded-lg border border-pizarra-border-control bg-pizarra-control px-2.5 py-1.5 text-sm font-medium text-pizarra-text"
-          >
-            {Object.values(GAS_SPECIFICATIONS).map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.label} · {g.pcsMcalPerM3} Mcal/m³ (máx {g.maxPressureDropPa} Pa)
-              </option>
-            ))}
-          </select>
+      {/* Resumen del gas elegido (se cambia en el paso 1) */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-pizarra-border bg-pizarra-surface p-3 shadow-sm">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-pizarra-subtext">
+            Tipo de gas (Tabla VI)
+          </p>
+          <p className="truncate text-sm font-bold text-pizarra-text">
+            {GAS_SPECIFICATIONS[gasType].label}
+          </p>
+          <p className="text-xs tabular-nums text-pizarra-subtext">
+            {GAS_SPECIFICATIONS[gasType].pcsMcalPerM3} Mcal/m³ · máx{" "}
+            {GAS_SPECIFICATIONS[gasType].maxPressureDropPa} Pa
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={onEditGasType}
+          className="shrink-0 rounded-lg border border-pizarra-border-control bg-pizarra-control px-2.5 py-1.5 text-xs font-semibold text-pizarra-text-control transition-colors hover:bg-pizarra-control-hover"
+        >
+          Cambiar
+        </button>
       </div>
 
       {/* Panel del tramo seleccionado (Sección 9.5) */}

@@ -9,7 +9,7 @@ export interface CommuneDesignTemp {
 }
 
 /**
- * Referencia de temperaturas de cálculo por comuna/ciudad en Chile (NCh 1079 / DS 66).
+ * Referencia de temperaturas de cálculo por comuna/ciudad en Chile (DS 66 Art. 61 / Tablas XVI a XVIII).
  * El usuario siempre puede ajustar manualmente la temperatura si su proyecto lo requiere.
  */
 export const CHILE_COMMUNE_TEMPS: readonly CommuneDesignTemp[] = [

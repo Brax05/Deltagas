@@ -255,7 +255,7 @@ export default function DocumentosPage() {
     <div className="space-y-4">
       <div className="rounded-xl border border-pizarra-border bg-pizarra-surface p-4 shadow-sm">
         <h1 className="text-base font-bold text-pizarra-text">
-          Módulo 7 · Documentos de respaldo y lectura de placas técnicas
+          Documentos de respaldo y lectura de placas técnicas (DS 66)
         </h1>
         <p className="mt-0.5 text-xs text-pizarra-subtext">
           Asistente guiado de terreno (&ldquo;¿Qué hiciste hoy?&rdquo;) y verificación de placas técnicas antes de incorporarlas a tu proyecto (sin sellos ni logos SEC).
@@ -331,12 +331,12 @@ export default function DocumentosPage() {
           </label>
         </section>
 
-        {/* Sección 12: Foto y lectura asistida de placa técnica */}
+        {/* Foto y lectura asistida de placa técnica */}
         <section className="rounded-xl border border-pizarra-border bg-pizarra-surface p-4 shadow-sm">
           <div className="flex items-center gap-2">
             <Camera className="h-4 w-4 text-pizarra-link" />
             <h2 className="text-sm font-bold text-pizarra-text">
-              Captura y confirmación de placa técnica (Sección 12)
+              Captura y confirmación de placa técnica (DS 66 Art. 46)
             </h2>
           </div>
           <p className="mt-1 text-xs text-pizarra-subtext">

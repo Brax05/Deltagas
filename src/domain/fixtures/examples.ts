@@ -1,5 +1,5 @@
-import { createExamReferenceProject } from "@/domain/fixtures/exam-reference";
-import { createModule4Part2ExampleProject } from "@/domain/fixtures/module4-example";
+import { createResidentialBasicProject } from "@/domain/fixtures/residential-basic";
+import { createResidentialExtendedProject } from "@/domain/fixtures/residential-extended";
 import type { ProjectData } from "@/domain/types";
 
 export interface DiagramExampleDefinition {
@@ -12,24 +12,24 @@ export interface DiagramExampleDefinition {
 
 export const DIAGRAM_EXAMPLES: readonly DiagramExampleDefinition[] = [
   {
-    id: "modulo-4-parte-2-1-glp",
+    id: "ejemplo-residencial-glp-basico",
     title: "Ejemplo 1",
     badge: "5 tramos · 3 artefactos",
     description:
-      "Red GLP con tramos 1-2 (10 m), 2-3 (2 m), 2-4 (5 m), 4-5 (2 m) y 4-6 (7 m), y artefactos en orden de tabla: Calefón 26, Cocina 8 y Estufa 5 Mcal/h.",
+      "Red residencial GLP (31 Mcal/h) según DS 66 Tabla V con Calefón 10 L/min (20 Mcal/h), Cocina completa (8 Mcal/h) y Estufa mural chica (3 Mcal/h).",
     createProject: () => ({
-      ...createModule4Part2ExampleProject(),
+      ...createResidentialBasicProject(),
       updatedAt: new Date().toISOString(),
     }),
   },
   {
-    id: "examen-arica-ds66",
+    id: "ejemplo-residencial-glp-completo",
     title: "Ejemplo 2",
     badge: "Escala real · 11 tramos · 6 artefactos",
     description:
-      "Red GLP en Cobre Tipo L (44,5 Mcal/h) con tramos ortogonales y diagonales, 6 artefactos, recintos evaluados y prueba de hermeticidad.",
+      "Red residencial GLP en Cobre Tipo L (50 Mcal/h) con tramos ortogonales y diagonales, 6 artefactos DS 66 Tabla V, evaluación de recintos y prueba de hermeticidad.",
     createProject: () => ({
-      ...createExamReferenceProject(),
+      ...createResidentialExtendedProject(),
       updatedAt: new Date().toISOString(),
     }),
   },

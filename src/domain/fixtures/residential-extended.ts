@@ -1,23 +1,22 @@
 import { DEFAULT_ROOM_HEIGHT_METERS } from "@/domain/ds66/rooms";
 import type { ProjectData } from "@/domain/types";
 
-export const EXAM_REFERENCE_UNEDITED_UPDATED_AT = "2026-11-12T00:00:00.000Z";
+export const RESIDENTIAL_EXTENDED_UPDATED_AT = "2026-11-12T00:00:00.000Z";
 
 /**
- * Caso de referencia (Sección 17):
- * Gas GLP (cilindros 45 kg), Casa 180 m² en Arica (10 °C),
- * Potencia total: 44,5 Mcal/h, Red de 11 tramos desde S hacia 6 artefactos.
- * Los diámetros cargados son valores provisorios de partida que el usuario puede ajustar.
+ * Ejemplo residencial ramificado según DS 66 (Tablas V, VIII, IX, XVI-XXII):
+ * Gas GLP (cilindros 45 kg), Vivienda 160 m² en Concepción (0 °C),
+ * Potencia total: 50 Mcal/h (6 artefactos de Tabla V), Red de 11 tramos desde S.
  */
-export function createExamReferenceProject(): ProjectData {
+export function createResidentialExtendedProject(): ProjectData {
   return {
-    id: "proyecto-examen-ds66",
-    name: "Ejemplo 2 — Examen final DS 66 (Arica)",
+    id: "ejemplo-residencial-glp-completo",
+    name: "Ejemplo 2 — Red residencial ramificada GLP (DS 66)",
     gasType: "GLP",
     client: {
-      ownerName: "Propietario de referencia",
-      address: "Vivienda 180 m²",
-      commune: "Arica",
+      ownerName: "Vivienda unifamiliar tipo B",
+      address: "Vivienda 160 m² — Red interior GLP",
+      commune: "Concepción",
     },
     segments: [
       {
@@ -25,9 +24,9 @@ export function createExamReferenceProject(): ProjectData {
         fromPointId: "S",
         toPointId: "A",
         parts: [
-          { direction: "down", lengthCm: 150 },
-          { direction: "up-right", lengthCm: 550 },
-          { direction: "right", lengthCm: 900 },
+          { direction: "down", lengthCm: 100 },
+          { direction: "up-right", lengthCm: 500 },
+          { direction: "right", lengthCm: 600 },
         ],
         nominalDiameter: "1",
       },
@@ -36,10 +35,10 @@ export function createExamReferenceProject(): ProjectData {
         fromPointId: "A",
         toPointId: "E1",
         parts: [
-          { direction: "down-left", lengthCm: 250 },
+          { direction: "down-left", lengthCm: 200 },
           { direction: "right", lengthCm: 200 },
-          { direction: "down-right", lengthCm: 150 },
-          { direction: "right", lengthCm: 200 },
+          { direction: "down-right", lengthCm: 100 },
+          { direction: "right", lengthCm: 100 },
         ],
         nominalDiameter: "1/2",
       },
@@ -49,7 +48,7 @@ export function createExamReferenceProject(): ProjectData {
         toPointId: "B",
         parts: [
           { direction: "right", lengthCm: 200 },
-          { direction: "up-right", lengthCm: 400 },
+          { direction: "up-right", lengthCm: 300 },
         ],
         nominalDiameter: "1",
       },
@@ -57,7 +56,7 @@ export function createExamReferenceProject(): ProjectData {
         id: "T4",
         fromPointId: "B",
         toPointId: "C",
-        parts: [{ direction: "right", lengthCm: 1400 }],
+        parts: [{ direction: "right", lengthCm: 1000 }],
         nominalDiameter: "3/4",
       },
       {
@@ -65,9 +64,9 @@ export function createExamReferenceProject(): ProjectData {
         fromPointId: "C",
         toPointId: "Ca1",
         parts: [
-          { direction: "right", lengthCm: 400 },
-          { direction: "up", lengthCm: 100 },
           { direction: "right", lengthCm: 300 },
+          { direction: "up", lengthCm: 100 },
+          { direction: "right", lengthCm: 200 },
         ],
         nominalDiameter: "3/4",
       },
@@ -76,7 +75,7 @@ export function createExamReferenceProject(): ProjectData {
         fromPointId: "C",
         toPointId: "E2",
         parts: [
-          { direction: "down-left", lengthCm: 300 },
+          { direction: "down-left", lengthCm: 200 },
           { direction: "right", lengthCm: 200 },
         ],
         nominalDiameter: "1/2",
@@ -86,9 +85,9 @@ export function createExamReferenceProject(): ProjectData {
         fromPointId: "B",
         toPointId: "D",
         parts: [
-          { direction: "up-right", lengthCm: 500 },
+          { direction: "up-right", lengthCm: 400 },
           { direction: "right", lengthCm: 300 },
-          { direction: "up-right", lengthCm: 300 },
+          { direction: "up-right", lengthCm: 200 },
         ],
         nominalDiameter: "3/4",
       },
@@ -96,21 +95,21 @@ export function createExamReferenceProject(): ProjectData {
         id: "T8",
         fromPointId: "D",
         toPointId: "E3",
-        parts: [{ direction: "right", lengthCm: 1000 }],
+        parts: [{ direction: "right", lengthCm: 800 }],
         nominalDiameter: "1/2",
       },
       {
         id: "T9",
         fromPointId: "D",
         toPointId: "E",
-        parts: [{ direction: "up", lengthCm: 200 }],
+        parts: [{ direction: "up", lengthCm: 300 }],
         nominalDiameter: "3/4",
       },
       {
         id: "T10",
         fromPointId: "E",
         toPointId: "Ca2",
-        parts: [{ direction: "left", lengthCm: 800 }],
+        parts: [{ direction: "left", lengthCm: 600 }],
         nominalDiameter: "1/2",
       },
       {
@@ -118,8 +117,8 @@ export function createExamReferenceProject(): ProjectData {
         fromPointId: "E",
         toPointId: "Co",
         parts: [
-          { direction: "up", lengthCm: 400 },
-          { direction: "left", lengthCm: 700 },
+          { direction: "up", lengthCm: 300 },
+          { direction: "left", lengthCm: 600 },
         ],
         nominalDiameter: "1/2",
       },
@@ -127,59 +126,65 @@ export function createExamReferenceProject(): ProjectData {
     appliances: [
       {
         id: "E1",
-        name: "E1 (Estufa 2 Mcal/h)",
+        name: "E1 (Estufa mural chica 3 Mcal/h)",
         segmentId: "T2",
+        catalogId: "estufa-mural-chica",
         applianceClass: "estufa",
         circuitType: "A",
-        powerMcalPerHour: 2,
+        powerMcalPerHour: 3,
         quantity: 1,
         roomId: "room-E1",
       },
       {
         id: "Ca1",
-        name: "Ca1 (Calefón 21 Mcal/h)",
+        name: "Ca1 (Calefón 10 L/min 20 Mcal/h)",
         segmentId: "T5",
+        catalogId: "calefon-10",
         applianceClass: "calefon",
         circuitType: "A",
-        powerMcalPerHour: 21,
+        powerMcalPerHour: 20,
         quantity: 1,
       },
       {
         id: "E2",
-        name: "E2 (Estufa 2 Mcal/h)",
+        name: "E2 (Estufa mural chica 3 Mcal/h)",
         segmentId: "T6",
+        catalogId: "estufa-mural-chica",
         applianceClass: "estufa",
         circuitType: "A",
-        powerMcalPerHour: 2,
+        powerMcalPerHour: 3,
         quantity: 1,
         roomId: "room-E2",
       },
       {
         id: "E3",
-        name: "E3 (Estufa 3 Mcal/h)",
+        name: "E3 (Estufa mural grande 5 Mcal/h)",
         segmentId: "T8",
+        catalogId: "estufa-mural-grande",
         applianceClass: "estufa",
         circuitType: "A",
-        powerMcalPerHour: 3,
+        powerMcalPerHour: 5,
         quantity: 1,
         roomId: "room-E3",
       },
       {
         id: "Ca2",
-        name: "Ca2 (Calefón 7,5 Mcal/h)",
+        name: "Ca2 (Calefón 5 L/min 11 Mcal/h)",
         segmentId: "T10",
+        catalogId: "calefon-5",
         applianceClass: "calefon",
         circuitType: "A",
-        powerMcalPerHour: 7.5,
+        powerMcalPerHour: 11,
         quantity: 1,
       },
       {
         id: "Co",
-        name: "Co (Cocina 9 Mcal/h)",
+        name: "Co (Cocina completa 8 Mcal/h)",
         segmentId: "T11",
+        catalogId: "cocina-completa",
         applianceClass: "cocina",
         circuitType: "A",
-        powerMcalPerHour: 9,
+        powerMcalPerHour: 8,
         quantity: 1,
         roomId: "room-Co",
       },
@@ -196,8 +201,8 @@ export function createExamReferenceProject(): ProjectData {
       {
         id: "room-E2",
         name: "Recinto E2",
-        lengthMeters: 8,
-        widthMeters: 3,
+        lengthMeters: 6,
+        widthMeters: 3.5,
         heightMeters: DEFAULT_ROOM_HEIGHT_METERS,
         ventilationType: "directa",
       },
@@ -205,7 +210,7 @@ export function createExamReferenceProject(): ProjectData {
         id: "room-E3",
         name: "Recinto E3",
         lengthMeters: 6,
-        widthMeters: 7,
+        widthMeters: 5,
         heightMeters: DEFAULT_ROOM_HEIGHT_METERS,
         ventilationType: "directa",
       },
@@ -230,17 +235,17 @@ export function createExamReferenceProject(): ProjectData {
         range: "0 - 150 mbar",
         graduation: "1 mbar",
       },
-      notes: "Datos provisorios del caso de referencia (altura de recinto 2,4 m por defecto).",
+      notes: "Valores referenciales según DS 66 Art. 78.3.5 (altura de recinto 2,4 m por defecto).",
     },
     cylinders: {
-      builtAreaM2: 180,
-      commune: "Arica",
-      designTempC: 10,
+      builtAreaM2: 160,
+      commune: "Concepción",
+      designTempC: 0,
       cylinderTypeKg: 45,
       consumptionMode: "intermitente",
       calculationMethod: "vaporizacion",
       tablaXviiProfileKey: "2_estufa_2_calefon_cocina",
     },
-    updatedAt: EXAM_REFERENCE_UNEDITED_UPDATED_AT,
+    updatedAt: RESIDENTIAL_EXTENDED_UPDATED_AT,
   };
 }

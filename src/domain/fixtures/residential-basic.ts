@@ -1,45 +1,44 @@
 import type { ProjectData } from "@/domain/types";
 
-export const MODULE4_PART2_UPDATED_AT = "2026-11-13T00:00:00.000Z";
+export const RESIDENTIAL_BASIC_UPDATED_AT = "2026-11-13T00:00:00.000Z";
 
 /**
- * Ejemplo de red — Módulo 4 · Parte 2.1 (Continuación Cálculo de Redes · Gas Licuado):
- * Tramos: 1-2 (10 m), 2-3 (2 m), 2-4 (5 m), 4-5 (2 m), 4-6 (7 m).
- * Artefactos en orden de la tabla PI (Total = 39 Mcal/h):
- *   1. 1 Calefón de 26 Mcal/h (punto 3, tramo 2-3)
- *   2. 1 Cocina de 8 Mcal/h (punto 5, tramo 4-5)
- *   3. 1 Estufa de 5 Mcal/h (punto 6, tramo 4-6)
+ * Ejemplo residencial básico según DS 66 (Art. 46 / Tabla V y Tabla 1 GLP):
+ * Red interior GLP en Cobre Tipo L de 5 tramos y 3 artefactos domésticos de Tabla V (31 Mcal/h):
+ *   1. Calefón 10 L/min — 20 Mcal/h (Tabla V)
+ *   2. Cocina completa — 8 Mcal/h (Tabla V)
+ *   3. Estufa mural chica — 3 Mcal/h (Tabla V)
  */
-export function createModule4Part2ExampleProject(): ProjectData {
+export function createResidentialBasicProject(): ProjectData {
   return {
-    id: "modulo-4-parte-2-1-glp",
-    name: "Ejemplo 1 — Gas Licuado (39 Mcal/h)",
+    id: "ejemplo-residencial-glp-basico",
+    name: "Ejemplo 1 — Vivienda unifamiliar GLP (DS 66)",
     gasType: "GLP",
     client: {
-      ownerName: "Ejemplo Módulo 4 · Parte 2.1",
-      address: "Cálculo de Redes — Gas Licuado",
-      commune: "Santiago",
+      ownerName: "Vivienda unifamiliar tipo A",
+      address: "Red interior baja presión — GLP",
+      commune: "Valparaíso",
     },
     segments: [
       {
         id: "T1",
         fromPointId: "S",
         toPointId: "2",
-        parts: [{ direction: "right", lengthCm: 1000 }],
+        parts: [{ direction: "right", lengthCm: 800 }],
         nominalDiameter: "3/4",
       },
       {
         id: "T2",
         fromPointId: "2",
         toPointId: "3",
-        parts: [{ direction: "up", lengthCm: 200 }],
+        parts: [{ direction: "up", lengthCm: 300 }],
         nominalDiameter: "1/2",
       },
       {
         id: "T3",
         fromPointId: "2",
         toPointId: "4",
-        parts: [{ direction: "right", lengthCm: 500 }],
+        parts: [{ direction: "right", lengthCm: 400 }],
         nominalDiameter: "1/2",
       },
       {
@@ -53,24 +52,24 @@ export function createModule4Part2ExampleProject(): ProjectData {
         id: "T5",
         fromPointId: "4",
         toPointId: "6",
-        parts: [{ direction: "right", lengthCm: 700 }],
+        parts: [{ direction: "right", lengthCm: 600 }],
         nominalDiameter: "1/2",
       },
     ],
     appliances: [
       {
-        id: "mod4-calefon",
-        name: "Calefón",
+        id: "art-calefon",
+        name: "Calefón 10 L/min",
         segmentId: "T2",
-        catalogId: "calefon-13",
+        catalogId: "calefon-10",
         applianceClass: "calefon",
         circuitType: "B",
-        powerMcalPerHour: 26,
+        powerMcalPerHour: 20,
         quantity: 1,
       },
       {
-        id: "mod4-cocina",
-        name: "Cocina",
+        id: "art-cocina",
+        name: "Cocina completa",
         segmentId: "T4",
         catalogId: "cocina-completa",
         applianceClass: "cocina",
@@ -79,13 +78,13 @@ export function createModule4Part2ExampleProject(): ProjectData {
         quantity: 1,
       },
       {
-        id: "mod4-estufa",
-        name: "Estufa",
+        id: "art-estufa",
+        name: "Estufa mural chica",
         segmentId: "T5",
-        catalogId: "estufa-mural-grande",
+        catalogId: "estufa-mural-chica",
         applianceClass: "estufa",
         circuitType: "A",
-        powerMcalPerHour: 5,
+        powerMcalPerHour: 3,
         quantity: 1,
       },
     ],
@@ -102,16 +101,16 @@ export function createModule4Part2ExampleProject(): ProjectData {
         range: "0 - 100 mbar",
         graduation: "0,5 mbar",
       },
-      notes: "Ejemplo Módulo 4 · Parte 2.1 — Gas Licuado (39 Mcal/h total).",
+      notes: "Valores referenciales según DS 66 Art. 78.3.5 (31 Mcal/h total).",
     },
     cylinders: {
       builtAreaM2: 70,
-      commune: "Santiago",
-      designTempC: 0,
+      commune: "Valparaíso",
+      designTempC: 5,
       cylinderTypeKg: 45,
       consumptionMode: "intermitente",
       calculationMethod: "vaporizacion",
     },
-    updatedAt: MODULE4_PART2_UPDATED_AT,
+    updatedAt: RESIDENTIAL_BASIC_UPDATED_AT,
   };
 }

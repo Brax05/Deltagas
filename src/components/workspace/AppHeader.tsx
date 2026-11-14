@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Flame, FileText, UserCheck, ShieldAlert } from "lucide-react";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Red y Cálculo", icon: Flame },
+  { href: "/", label: "Proyecto", icon: Flame },
   { href: "/documentos", label: "Documentos", icon: FileText },
   { href: "/cuenta", label: "Cuenta", icon: UserCheck },
 ];

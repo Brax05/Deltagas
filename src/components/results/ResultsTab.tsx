@@ -311,7 +311,7 @@ export function ResultsTab({
                 <Sparkles className="h-3.5 w-3.5" />
               </span>
               <h2 className="text-sm font-bold text-pizarra-text">
-                Sugerencias automáticas de corrección (Sección 5.2)
+                Sugerencias automáticas de corrección (DS 66 Tabla VIII)
               </h2>
             </div>
             {suggestions.diameterChanges.length > 0 && (
@@ -846,7 +846,7 @@ export function ResultsTab({
             <div className="flex items-center gap-2">
               <Gauge className="h-4 w-4 text-pizarra-subtext" />
               <h2 className="text-sm font-bold text-pizarra-text">
-                Módulo 3 · Hoja de prueba de hermeticidad
+                DS 66 Art. 78.3.5 · Hoja de prueba de hermeticidad
               </h2>
             </div>
             <span
@@ -1063,7 +1063,7 @@ export function ResultsTab({
             <div className="flex items-center gap-2">
               <Cylinder className="h-4 w-4 text-pizarra-subtext" />
               <h2 className="text-sm font-bold text-pizarra-text">
-                Módulo 4 · Cilindros GLP (Tablas XVI, XVII y XVIII)
+                DS 66 Art. 61 · Cilindros GLP (Tablas XVI, XVII y XVIII)
               </h2>
             </div>
             <span
@@ -1326,7 +1326,7 @@ export function ResultsTab({
           <div className="flex items-center gap-2">
             <ClipboardCheck className="h-4 w-4 text-pizarra-subtext" />
             <h2 className="text-sm font-bold text-pizarra-text">
-              Verificación humana antes de firmar (Sección 16)
+              Verificación humana antes de firmar (DS 66 Art. 4)
             </h2>
           </div>
           <p className="mt-1 text-xs text-pizarra-subtext">

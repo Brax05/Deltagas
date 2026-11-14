@@ -218,9 +218,9 @@ export function sanitizeProjectData(parsed: unknown): ProjectData | null {
   if (candidate.segments.length > 0 && sanitizedSegments.length === 0) {
     return null;
   }
-  // Si el proyecto de examen quedó sin tramos accidentalmente, restaurar ejemplo de examen
+  // Si el proyecto de ejemplo quedó sin tramos accidentalmente, restaurar proyecto limpio
   if (
-    candidate.id === "proyecto-examen-ds66" &&
+    candidate.id === "ejemplo-residencial-glp-completo" &&
     sanitizedSegments.length === 0
   ) {
     return null;
@@ -285,10 +285,13 @@ export function resolveDraftProject(
     if (!sanitized) {
       return createEmptyProject();
     }
-    // En almacenamiento v1 el ejemplo de examen (proyecto-examen-ds66) se cargaba
-    // automáticamente por defecto; al migrar a v2 se inicia vacío y el usuario
-    // puede volver a abrirlo desde "Diagramas de ejemplo".
-    if (options?.fromLegacyStorage && sanitized.id === "proyecto-examen-ds66") {
+    // En almacenamiento v1 el ejemplo predefinido se cargaba automáticamente
+    // por defecto; al migrar a v2 se inicia vacío y el usuario puede abrirlo
+    // desde "Diagramas de ejemplo".
+    if (
+      options?.fromLegacyStorage &&
+      sanitized.id === "ejemplo-residencial-glp-completo"
+    ) {
       return createEmptyProject();
     }
     return sanitized;

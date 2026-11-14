@@ -2,9 +2,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  GitBranch,
-  Calculator,
-  DoorOpen,
   FilePlus2,
   BookOpen,
   ChevronDown,
@@ -32,6 +29,7 @@ import {
   getNextSegmentId,
   type NetworkHistoryState,
 } from "@/domain/diagram";
+import { getGasSpec } from "@/domain/ds66/gases";
 import { DIAGRAM_EXAMPLES } from "@/domain/fixtures/examples";
 import {
   createEmptyProject,
@@ -53,8 +51,15 @@ import { NetworkDiagram } from "@/components/diagram/NetworkDiagram";
 import { NetworkPanel } from "@/components/network/NetworkPanel";
 import { ResultsTab } from "@/components/results/ResultsTab";
 import { RoomsTab } from "@/components/rooms/RoomsTab";
+import { GasTypeStep } from "@/components/workspace/GasTypeStep";
+import {
+  StepIntro,
+  WorkflowStepper,
+  type WorkflowStepId,
+  type WorkflowStepState,
+} from "@/components/workspace/WorkflowStepper";
 
-type WorkspaceTab = "red" | "resultados" | "recintos";
+type WorkspaceTab = WorkflowStepId;
 
 interface WorkspaceState {
   hydrated: boolean;
@@ -81,7 +86,7 @@ function buildInitialWorkspace(): WorkspaceState {
 }
 
 export function GasWorkspace() {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>("red");
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("gas");
   const [workspace, setWorkspace] = useState<WorkspaceState>(buildInitialWorkspace);
   const [examplesMenuOpen, setExamplesMenuOpen] = useState(false);
   const examplesMenuRef = useRef<HTMLDivElement | null>(null);
@@ -102,6 +107,7 @@ export function GasWorkspace() {
       selectedSegmentId: saved.segments[0]?.id ?? null,
       selectedPointId: null,
     });
+    setActiveTab(saved.segments.length > 0 ? "red" : "gas");
   }, []);
 
   useEffect(() => {
@@ -589,31 +595,73 @@ export function GasWorkspace() {
     (r) => !r.overallCompliant
   ).length;
 
+  const networkOk =
+    project.segments.length > 0 &&
+    calculation.allCompliant &&
+    !calculation.hasOutOfRangeSegments &&
+    diagramValidation.valid;
+
+  const gasSpec = getGasSpec(project.gasType);
+  const gasShortLabel =
+    gasSpec.family === "GLP"
+      ? "GLP"
+      : gasSpec.label.replace("Gas Natural ", "GN ");
+
+  const stepStates: Record<WorkflowStepId, WorkflowStepState> = {
+    gas: {
+      status: "ok",
+      subtitle: `${gasShortLabel} · ${gasSpec.pcsMcalPerM3} Mcal/m³`,
+    },
+    red:
+      project.segments.length === 0
+        ? { status: "pending", subtitle: "Sin tramos aún" }
+        : {
+            status: networkOk ? "ok" : "warn",
+            subtitle: `${project.segments.length} tramo(s) · ${calculation.totalPowerKw.toFixed(1)} kW`,
+          },
+    recintos:
+      project.rooms.length === 0
+        ? { status: "pending", subtitle: "Sin recintos" }
+        : project.appliances.length === 0
+          ? { status: "pending", subtitle: "Sin artefactos aún" }
+          : failingRoomsCount > 0
+            ? {
+                status: "warn",
+                subtitle: `${failingRoomsCount} con observaciones`,
+              }
+            : {
+                status: "ok",
+                subtitle: `${project.rooms.length} recinto(s) sin observaciones`,
+              },
+    resultados:
+      project.segments.length === 0
+        ? { status: "pending", subtitle: "Traza la red primero" }
+        : networkOk
+          ? { status: "ok", subtitle: "Sin observaciones" }
+          : { status: "warn", subtitle: "Revisar red" },
+  };
+
   return (
     <div className="space-y-4">
-      {/* Barra superior de proyecto + 3 pestañas principales (Sección 9) */}
-      <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-xl border border-pizarra-border bg-pizarra-surface p-3 shadow-sm">
+      {/* Cabecera del proyecto: nombre, estado y resumen */}
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-pizarra-border bg-pizarra-surface px-4 py-3 shadow-sm">
         <div className="min-w-[220px] flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-sm font-bold text-pizarra-text sm:text-base">
+            <h1 className="text-base font-bold text-pizarra-text sm:text-lg">
               {project.name}
             </h1>
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
                 project.segments.length === 0
                   ? "border-pizarra-border bg-pizarra-secondary text-pizarra-subtext"
-                  : calculation.allCompliant &&
-                      !calculation.hasOutOfRangeSegments &&
-                      diagramValidation.valid
+                  : networkOk
                     ? "border-status-ok-border bg-status-ok-bg text-status-ok-text"
                     : "border-status-error-border bg-status-error-bg text-status-error-text"
               }`}
             >
               {project.segments.length === 0 ? (
                 <>Listo para trazar</>
-              ) : calculation.allCompliant &&
-                !calculation.hasOutOfRangeSegments &&
-                diagramValidation.valid ? (
+              ) : networkOk ? (
                 <>
                   <CheckCircle2 className="h-3 w-3 text-status-ok-text" />
                   Red cumple
@@ -626,11 +674,26 @@ export function GasWorkspace() {
               )}
             </span>
           </div>
-          <p className="mt-0.5 text-xs tabular-nums text-pizarra-subtext">
-            {project.segments.length} tramo(s) ·{" "}
-            {calculation.totalPowerMcalH.toFixed(1)} Mcal/h (
-            {calculation.totalPowerKw.toFixed(2)} kW) · Guardado automático local
-          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveTab("gas")}
+              title="Cambiar tipo de gas"
+              className="inline-flex items-center rounded-full border border-pizarra-border bg-pizarra-secondary px-2 py-0.5 font-semibold text-pizarra-text-control transition-colors hover:bg-pizarra-control-hover"
+            >
+              {gasShortLabel}
+            </button>
+            <span className="inline-flex items-center rounded-full border border-pizarra-border bg-pizarra-secondary px-2 py-0.5 font-medium tabular-nums text-pizarra-subtext">
+              {project.segments.length} tramo(s)
+            </span>
+            <span className="inline-flex items-center rounded-full border border-pizarra-border bg-pizarra-secondary px-2 py-0.5 font-medium tabular-nums text-pizarra-subtext">
+              {calculation.totalPowerKw.toFixed(2)} kW ·{" "}
+              {calculation.totalPowerMcalH.toFixed(1)} Mcal/h
+            </span>
+            <span className="hidden items-center rounded-full border border-pizarra-border bg-pizarra-secondary px-2 py-0.5 font-medium text-pizarra-subtext sm:inline-flex">
+              Guardado automático local
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -696,78 +759,39 @@ export function GasWorkspace() {
             onClick={() => {
               setExamplesMenuOpen(false);
               handleLoadProject(createEmptyProject());
+              setActiveTab("gas");
             }}
             className="inline-flex items-center gap-1.5 rounded-lg border border-pizarra-border-control bg-pizarra-control px-2.5 py-1.5 text-xs font-semibold text-pizarra-text-control transition-colors hover:bg-pizarra-control-hover"
           >
             <FilePlus2 className="h-3.5 w-3.5" />
             Nuevo vacío
           </button>
-
-          <div
-            role="tablist"
-            aria-label="Secciones de cálculo"
-            className="flex rounded-lg border border-pizarra-border bg-pizarra-secondary p-1"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "red"}
-              onClick={() => setActiveTab("red")}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
-                activeTab === "red"
-                  ? "bg-pizarra-action text-pizarra-action-text hover:bg-pizarra-action-hover"
-                  : "text-pizarra-subtext hover:text-pizarra-text"
-              }`}
-            >
-              <GitBranch className="h-3.5 w-3.5" />
-              Red
-            </button>
-
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "resultados"}
-              onClick={() => setActiveTab("resultados")}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
-                activeTab === "resultados"
-                  ? "bg-pizarra-action text-pizarra-action-text hover:bg-pizarra-action-hover"
-                  : "text-pizarra-subtext hover:text-pizarra-text"
-              }`}
-            >
-              <Calculator className="h-3.5 w-3.5" />
-              Resultados
-            </button>
-
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "recintos"}
-              onClick={() => setActiveTab("recintos")}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
-                activeTab === "recintos"
-                  ? "bg-pizarra-action text-pizarra-action-text hover:bg-pizarra-action-hover"
-                  : "text-pizarra-subtext hover:text-pizarra-text"
-              }`}
-            >
-              <DoorOpen className="h-3.5 w-3.5" />
-              Recintos
-              {failingRoomsCount > 0 && (
-                <span
-                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                    activeTab === "recintos"
-                      ? "bg-pizarra-surface text-pizarra-link"
-                      : "animate-badge-error border border-status-error-border bg-status-error-bg text-status-error-text"
-                  }`}
-                >
-                  {failingRoomsCount}
-                </span>
-              )}
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* Pestaña 1: Red (móvil: dibujo arriba + panel abajo; escritorio: lado a lado) */}
+      {/* Flujo guiado: pasos 1 a 5 y encabezado del paso activo */}
+      <WorkflowStepper
+        activeStep={activeTab}
+        steps={stepStates}
+        onSelectStep={setActiveTab}
+      />
+      <StepIntro activeStep={activeTab} onSelectStep={setActiveTab} />
+
+      {/* Paso 1: Tipo de gas */}
+      {activeTab === "gas" && (
+        <GasTypeStep
+          gasType={project.gasType}
+          onChangeGasType={(gasType: GasConfigId) =>
+            updateProject((prev) => ({
+              ...prev,
+              gasType,
+              updatedAt: new Date().toISOString(),
+            }))
+          }
+        />
+      )}
+
+      {/* Paso 2: Trazar red (móvil: dibujo arriba + panel abajo; escritorio: lado a lado) */}
       {activeTab === "red" && (
         <div className="flex flex-col gap-4 lg:grid lg:grid-cols-12 lg:items-start">
           <div className="lg:col-span-7 xl:col-span-8">
@@ -820,13 +844,7 @@ export function GasWorkspace() {
               roomEvaluations={roomEvaluations}
               calculation={calculation}
               selectedSegmentId={selectedSegmentId}
-              onChangeGasType={(gasType: GasConfigId) =>
-                updateProject((prev) => ({
-                  ...prev,
-                  gasType,
-                  updatedAt: new Date().toISOString(),
-                }))
-              }
+              onEditGasType={() => setActiveTab("gas")}
               onSelectSegment={setSelectedSegmentId}
               onAddSegmentWithAppliance={handleAddSegmentWithAppliance}
               onSetSingleLengthCm={handleSetSingleLengthCm}

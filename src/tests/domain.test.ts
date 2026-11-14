@@ -23,7 +23,7 @@ import {
   undoNetworkHistory,
   validateDiagram,
 } from "@/domain/diagram";
-import { createExamReferenceProject } from "@/domain/fixtures/exam-reference";
+import { createResidentialExtendedProject } from "@/domain/fixtures/residential-extended";
 import {
   DIAGRAM_EXAMPLES,
   getDefaultExampleDiagram,
@@ -31,7 +31,7 @@ import {
 import { resolveDraftProject, sanitizeProjectData } from "@/lib/storage/draft";
 import type { Appliance, Segment } from "@/domain/types";
 
-describe("DS 66 Tablas 1/5 y Fórmula de Pole (Sección 5.1)", () => {
+describe("DS 66 Tablas 1/5 y Fórmula de Pole (Art. 46)", () => {
   it("reproduce el ejemplo normativo: GN, 1\", 41 Mcal/h, 8 m -> 24 Pa (3 Pa/m)", () => {
     const lookup = lookupPartialPressureDropFromTable({
       gasFamily: "GN",
@@ -58,35 +58,35 @@ describe("DS 66 Tablas 1/5 y Fórmula de Pole (Sección 5.1)", () => {
   });
 });
 
-describe("Caso de referencia de examen (Sección 17)", () => {
-  const exam = createExamReferenceProject();
+describe("Red residencial ramificada DS 66 (Ejemplo 2)", () => {
+  const refProject = createResidentialExtendedProject();
 
-  it("acumula potencias aguas arriba correctamente (44,5 Mcal/h en T1)", () => {
+  it("acumula potencias aguas arriba correctamente (50 Mcal/h en T1)", () => {
     const result = calculateNetwork({
-      gasType: exam.gasType,
-      segments: exam.segments,
-      appliances: exam.appliances,
+      gasType: refProject.gasType,
+      segments: refProject.segments,
+      appliances: refProject.appliances,
     });
 
-    expect(result.totalPowerMcalH).toBeCloseTo(44.5, 4);
-    expect(result.totalPowerKw).toBeCloseTo(44.5 * 1.163, 3);
+    expect(result.totalPowerMcalH).toBeCloseTo(50, 4);
+    expect(result.totalPowerKw).toBeCloseTo(50 * 1.163, 3);
     expect(result.servicePressurePa).toBe(2800);
     expect(result.maxAllowedDropPa).toBe(150);
 
-    expect(result.segments["T1"]?.downstreamPowerMcalH).toBeCloseTo(44.5, 4);
-    expect(result.segments["T3"]?.downstreamPowerMcalH).toBeCloseTo(42.5, 4);
+    expect(result.segments["T1"]?.downstreamPowerMcalH).toBeCloseTo(50, 4);
+    expect(result.segments["T3"]?.downstreamPowerMcalH).toBeCloseTo(47, 4);
     expect(result.segments["T4"]?.downstreamPowerMcalH).toBeCloseTo(23, 4);
-    expect(result.segments["T7"]?.downstreamPowerMcalH).toBeCloseTo(19.5, 4);
-    expect(result.segments["T9"]?.downstreamPowerMcalH).toBeCloseTo(16.5, 4);
-    expect(result.segments["T11"]?.realLengthMeters).toBeCloseTo(11, 4);
+    expect(result.segments["T7"]?.downstreamPowerMcalH).toBeCloseTo(24, 4);
+    expect(result.segments["T9"]?.downstreamPowerMcalH).toBeCloseTo(19, 4);
+    expect(result.segments["T11"]?.realLengthMeters).toBeCloseTo(9, 4);
     expect(result.totalPipeVolumeLiters).toBeGreaterThan(0);
   });
 
   it("evalúa recintos por Tabla XX, fórmula f.8 para estufas y alturas Tabla XXII", () => {
     const evals = evaluateRooms({
-      gasType: exam.gasType,
-      rooms: exam.rooms,
-      appliances: exam.appliances,
+      gasType: refProject.gasType,
+      rooms: refProject.rooms,
+      appliances: refProject.appliances,
     });
 
     const e1 = evals.find((r) => r.roomId === "room-E1");
@@ -95,8 +95,8 @@ describe("Caso de referencia de examen (Sección 17)", () => {
     const co = evals.find((r) => r.roomId === "room-Co");
 
     expect(e1?.volumeRuleApplied).toBe("Fórmula f.8 (estufas)");
-    expect(e1?.requiredVolumeM3).toBeCloseTo((2 * 1.163) / 0.093, 2);
-    // Recinto E1: 3 * 3 * 2.4 = 21.6 m³ < ~25.01 m³ -> no cumple volumen
+    expect(e1?.requiredVolumeM3).toBeCloseTo((3 * 1.163) / 0.093, 2);
+    // Recinto E1: 3 * 3 * 2.4 = 21.6 m³ < ~37.52 m³ -> no cumple volumen
     expect(e1?.volumeCompliant).toBe(false);
     expect(e1?.lowerOpeningPlacement).toContain("15 cm");
 
@@ -109,39 +109,39 @@ describe("Caso de referencia de examen (Sección 17)", () => {
     // En GN la abertura inferior pasa a <= 50 cm del suelo
     const gnEvals = evaluateRooms({
       gasType: "GN_V_RM",
-      rooms: exam.rooms,
-      appliances: exam.appliances,
+      rooms: refProject.rooms,
+      appliances: refProject.appliances,
     });
     expect(gnEvals[0]?.lowerOpeningPlacement).toContain("50 cm");
   });
 
-  it("calcula dotación de cilindros GLP para Arica (180 m², 10 °C, 45 kg)", () => {
+  it("calcula dotación de cilindros GLP según DS 66 Tablas XVI y XVIII (Concepción, 160 m², 0 °C, 45 kg)", () => {
     const net = calculateNetwork({
-      gasType: exam.gasType,
-      segments: exam.segments,
-      appliances: exam.appliances,
+      gasType: refProject.gasType,
+      segments: refProject.segments,
+      appliances: refProject.appliances,
     });
 
     const cyl = evaluateGlpCylinders({
       totalInstalledPowerKw: net.totalPowerKw,
-      input: exam.cylinders,
+      input: refProject.cylinders,
     });
 
     expect(cyl.consumptionLevel).toBe("Alto");
-    expect(cyl.vaporizationRateKw).toBe(41);
+    expect(cyl.vaporizationRateKw).toBe(34);
     expect(cyl.requiredCylinders).toBe(2);
   });
 
   it("calcula hoja de prueba de hermeticidad (Art. 78.3.5)", () => {
     const net = calculateNetwork({
-      gasType: exam.gasType,
-      segments: exam.segments,
-      appliances: exam.appliances,
+      gasType: refProject.gasType,
+      segments: refProject.segments,
+      appliances: refProject.appliances,
     });
 
     const hermOk = evaluateHermeticity({
       networkResult: net,
-      input: exam.hermeticity,
+      input: refProject.hermeticity,
     });
     expect(hermOk.pressureVariationMbar).toBe(0);
     expect(hermOk.referenceDurationMinutesArt78).toBe(15);
@@ -149,14 +149,14 @@ describe("Caso de referencia de examen (Sección 17)", () => {
 
     const hermFail = evaluateHermeticity({
       networkResult: net,
-      input: { ...exam.hermeticity, finalPressureMbar: 82 },
+      input: { ...refProject.hermeticity, finalPressureMbar: 82 },
     });
     expect(hermFail.pressureVariationMbar).toBe(-2);
     expect(hermFail.passed).toBe(false);
   });
 });
 
-describe("Sugerencias ante no cumplimiento (Sección 5.2)", () => {
+describe("Sugerencias ante no cumplimiento (DS 66 Tabla VIII)", () => {
   it("propone aumento de diámetro hasta cumplir límite de presión", () => {
     const segments: Segment[] = [
       {
@@ -199,10 +199,10 @@ describe("Sugerencias ante no cumplimiento (Sección 5.2)", () => {
   });
 });
 
-describe("Diagrama ortogonal 2D, colisiones e historial (Módulo 5)", () => {
-  it("valida sin cruces la red completa del caso de examen", () => {
-    const exam = createExamReferenceProject();
-    const validation = validateDiagram(exam.segments);
+describe("Diagrama ortogonal 2D, colisiones e historial", () => {
+  it("valida sin cruces la red completa del ejemplo residencial ramificado", () => {
+    const refProject = createResidentialExtendedProject();
+    const validation = validateDiagram(refProject.segments);
     expect(validation.valid).toBe(true);
     expect(validation.conflicts).toHaveLength(0);
   });
@@ -411,7 +411,7 @@ describe("Diagrama ortogonal 2D, colisiones e historial (Módulo 5)", () => {
 
 describe("Persistencia y sanitización de borradores", () => {
   it("normaliza recintos sin dimensiones válidas y recupera proyectos con tramos válidos", () => {
-    const valid = createExamReferenceProject();
+    const valid = createResidentialExtendedProject();
     const withBrokenRoom = {
       ...valid,
       rooms: [
@@ -431,7 +431,7 @@ describe("Persistencia y sanitización de borradores", () => {
     expect(sanitized?.rooms[0]?.heightMeters).toBe(2.4);
   });
 
-  it("descarta borradores de esquema antiguo incompatible o examen vacío", () => {
+  it("descarta borradores de esquema antiguo incompatible o ejemplo vacío", () => {
     const incompatible = {
       id: "old",
       gasType: "GLP",
@@ -439,12 +439,12 @@ describe("Persistencia y sanitización de borradores", () => {
     };
     expect(sanitizeProjectData(incompatible)).toBeNull();
 
-    const emptyExam = {
-      id: "proyecto-examen-ds66",
+    const emptyPreset = {
+      id: "ejemplo-residencial-glp-completo",
       gasType: "GLP",
       segments: [],
     };
-    expect(sanitizeProjectData(emptyExam)).toBeNull();
+    expect(sanitizeProjectData(emptyPreset)).toBeNull();
   });
 
   it("inicia vacío por defecto y conserva el diagrama de ejemplo cuando el usuario lo carga", () => {
@@ -454,7 +454,7 @@ describe("Persistencia y sanitización de borradores", () => {
     ]);
     expect(resolveDraftProject(null).segments).toHaveLength(0);
 
-    const legacyAutoSeeded = createExamReferenceProject();
+    const legacyAutoSeeded = createResidentialExtendedProject();
     expect(
       resolveDraftProject(JSON.stringify(legacyAutoSeeded), {
         fromLegacyStorage: true,
@@ -463,32 +463,32 @@ describe("Persistencia y sanitización de borradores", () => {
 
     const loadedExample = getDefaultExampleDiagram();
     const restored = resolveDraftProject(JSON.stringify(loadedExample));
-    expect(restored.id).toBe("modulo-4-parte-2-1-glp");
+    expect(restored.id).toBe("ejemplo-residencial-glp-basico");
     expect(restored.gasType).toBe("GLP");
     expect(restored.segments).toHaveLength(5);
     expect(restored.appliances.map((a) => [a.name, a.powerMcalPerHour])).toEqual([
-      ["Calefón", 26],
-      ["Cocina", 8],
-      ["Estufa", 5],
+      ["Calefón 10 L/min", 20],
+      ["Cocina completa", 8],
+      ["Estufa mural chica", 3],
     ]);
     expect(validateDiagram(restored.segments).valid).toBe(true);
-    const mod4Calc = calculateNetwork({
+    const basicCalc = calculateNetwork({
       gasType: restored.gasType,
       segments: restored.segments,
       appliances: restored.appliances,
     });
-    expect(mod4Calc.totalPowerMcalH).toBe(39);
-    expect(mod4Calc.allCompliant).toBe(true);
+    expect(basicCalc.totalPowerMcalH).toBe(31);
+    expect(basicCalc.allCompliant).toBe(true);
 
-    const examLoaded = DIAGRAM_EXAMPLES.find(
-      (ex) => ex.id === "examen-arica-ds66"
+    const extendedLoaded = DIAGRAM_EXAMPLES.find(
+      (ex) => ex.id === "ejemplo-residencial-glp-completo"
     )?.createProject();
-    expect(examLoaded).toBeDefined();
-    const examRestored = resolveDraftProject(JSON.stringify(examLoaded));
-    expect(examRestored.segments).toHaveLength(11);
-    expect(examRestored.id).toBe("proyecto-examen-ds66");
+    expect(extendedLoaded).toBeDefined();
+    const extendedRestored = resolveDraftProject(JSON.stringify(extendedLoaded));
+    expect(extendedRestored.segments).toHaveLength(11);
+    expect(extendedRestored.id).toBe("ejemplo-residencial-glp-completo");
 
-    const customV1 = { ...examLoaded!, id: "mi-proyecto-1" };
+    const customV1 = { ...extendedLoaded!, id: "mi-proyecto-1" };
     expect(
       resolveDraftProject(JSON.stringify(customV1), {
         fromLegacyStorage: true,

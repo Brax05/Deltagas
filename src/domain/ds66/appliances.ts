@@ -18,8 +18,8 @@ export function mcalHToKw(mcalH: number): number {
 }
 
 /**
- * Catálogo base según DS 66 Tabla V ("Potencia Aproximada de los Artefactos
- * Domésticos para Gas, de Uso Común") y potencias habituales en proyectos.
+ * Catálogo base según DS 66 Art. 46 — Tabla V ("Potencia Aproximada de los Artefactos
+ * Domésticos para Gas, de Uso Común").
  */
 export const APPLIANCE_CATALOG_TABLA_V: readonly CatalogAppliance[] = [
   {
@@ -39,15 +39,6 @@ export const APPLIANCE_CATALOG_TABLA_V: readonly CatalogAppliance[] = [
     powerKw: 5.8,
     defaultCircuitType: "A",
     notes: "DS 66 Tabla V",
-  },
-  {
-    id: "estufa-2-mcal",
-    name: "Estufa ambiental 2 Mcal/h",
-    applianceClass: "estufa",
-    powerMcalPerHour: 2,
-    powerKw: 2.33,
-    defaultCircuitType: "A",
-    notes: "Uso residencial / caso examen",
   },
   {
     id: "estufa-ambiental-12",
@@ -84,15 +75,6 @@ export const APPLIANCE_CATALOG_TABLA_V: readonly CatalogAppliance[] = [
     powerKw: 9.3,
     defaultCircuitType: "A",
     notes: "DS 66 Tabla V",
-  },
-  {
-    id: "cocina-9-mcal",
-    name: "Cocina 9 Mcal/h",
-    applianceClass: "cocina",
-    powerMcalPerHour: 9,
-    powerKw: 10.47,
-    defaultCircuitType: "A",
-    notes: "Caso de referencia",
   },
   {
     id: "calefon-5",

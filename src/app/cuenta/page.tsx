@@ -132,7 +132,7 @@ export default function CuentaPage() {
           <UserCheck className="h-5 w-5 text-pizarra-link" />
           <div>
             <h1 className="text-base font-bold text-pizarra-text">
-              Módulo 8 · Cuenta del instalador y privacidad
+              Cuenta del instalador y privacidad
             </h1>
             <p className="text-xs text-pizarra-subtext">
               {supabaseReady
