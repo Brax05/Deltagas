@@ -39,7 +39,7 @@ export function AppHeader() {
           </div>
         </Link>
 
-        <nav className="flex items-center gap-1.5">
+        <nav className="flex max-w-full min-w-0 items-center gap-1 sm:gap-1.5">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active =
@@ -50,13 +50,13 @@ export function AppHeader() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
+                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition sm:px-3 sm:text-sm ${
                   active
                     ? "bg-pizarra-action text-pizarra-action-text hover:bg-pizarra-action-hover"
                     : "border border-transparent text-pizarra-text-control hover:bg-pizarra-control-hover hover:text-pizarra-text"
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-4 w-4 max-[359px]:hidden" />
                 <span>{item.label}</span>
               </Link>
             );

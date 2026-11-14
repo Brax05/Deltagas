@@ -5,6 +5,8 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Fullscreen,
+  Minimize2,
   Undo2,
   Redo2,
   Download,
@@ -172,9 +174,13 @@ export function NetworkDiagram({
   const [editingApplianceId, setEditingApplianceId] = useState<string | null>(
     null
   );
+  const editingApplianceIdRef = useRef<string | null>(null);
+  editingApplianceIdRef.current = editingApplianceId;
   const [quickAddDraft, setQuickAddDraft] = useState<QuickAddDraft | null>(
     null
   );
+  const quickAddDraftRef = useRef<QuickAddDraft | null>(null);
+  quickAddDraftRef.current = quickAddDraft;
   const [nodeDrag, setNodeDrag] = useState<NodeDragState | null>(null);
   const nodeDragRef = useRef<NodeDragState | null>(null);
   nodeDragRef.current = nodeDrag;
@@ -187,6 +193,33 @@ export function NetworkDiagram({
     h: number;
   } | null>(null);
   const [localHint, setLocalHint] = useState<string | null>(null);
+  const [isFullWindow, setIsFullWindow] = useState(false);
+
+  useEffect(() => {
+    if (!isFullWindow) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleWindowKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (nodeDragRef.current?.active) return;
+      if (quickAddDraftRef.current) {
+        setQuickAddDraft(null);
+        return;
+      }
+      if (editingApplianceIdRef.current) {
+        setEditingApplianceId(null);
+        return;
+      }
+      setIsFullWindow(false);
+    };
+
+    window.addEventListener("keydown", handleWindowKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", handleWindowKeyDown);
+    };
+  }, [isFullWindow]);
 
   useEffect(() => {
     if (viewResetKey === undefined) return;
@@ -196,6 +229,7 @@ export function NetworkDiagram({
     setNodeDrag(null);
     frozenWorldBoxRef.current = null;
     setLocalHint(null);
+    setIsFullWindow(false);
   }, [viewResetKey]);
 
   const [panning, setPanning] = useState<{
@@ -898,8 +932,15 @@ export function NetworkDiagram({
   const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (panning) {
       const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const scale = worldBox.w / zoom / rect.width;
+      if (!rect || rect.width <= 0 || rect.height <= 0) return;
+      const baseScale = Math.min(
+        rect.width / worldBox.w,
+        rect.height / worldBox.h
+      );
+      const scale =
+        Number.isFinite(baseScale) && baseScale > 0
+          ? 1 / (baseScale * zoom)
+          : worldBox.w / zoom / rect.width;
       setPan({
         x: panning.origX + (e.clientX - panning.startX) * scale,
         y: panning.origY + (e.clientY - panning.startY) * scale,
@@ -966,10 +1007,14 @@ export function NetworkDiagram({
     <div
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="flex flex-col overflow-hidden rounded-xl border border-pizarra-border bg-pizarra-surface shadow-sm outline-none focus:ring-2 focus:ring-pizarra-action"
+      className={
+        isFullWindow
+          ? "fixed inset-0 z-50 flex h-dvh w-screen flex-col overflow-hidden bg-pizarra-surface outline-none"
+          : "flex flex-col overflow-hidden rounded-xl border border-pizarra-border bg-pizarra-surface shadow-sm outline-none focus:ring-2 focus:ring-pizarra-action"
+      }
     >
       {/* Barra superior del diagrama */}
-      <div className="no-print flex flex-wrap items-center justify-between gap-2 border-b border-pizarra-border bg-pizarra-secondary px-3 py-2">
+      <div className="no-print flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-pizarra-border bg-pizarra-secondary px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-pizarra-text sm:text-sm">
             Diagrama a escala real (Módulo 5)
@@ -1019,9 +1064,37 @@ export function NetworkDiagram({
             type="button"
             onClick={() => setViewTransform({ zoom: 1, pan: { x: 0, y: 0 } })}
             title="Ajustar a pantalla"
+            aria-label="Ajustar a pantalla"
             className="rounded-lg p-1.5 text-pizarra-text-control hover:bg-pizarra-control-hover"
           >
             <Maximize2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsFullWindow((prev) => !prev)}
+            title={
+              isFullWindow
+                ? "Salir de ventana completa (Esc)"
+                : "Ver diagrama en ventana completa"
+            }
+            aria-label={
+              isFullWindow ? "Salir de ventana completa" : "Ventana completa"
+            }
+            aria-pressed={isFullWindow}
+            className={`ml-1 flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold transition-colors ${
+              isFullWindow
+                ? "border-pizarra-action bg-pizarra-action text-white hover:opacity-95"
+                : "border-pizarra-border-control bg-pizarra-control text-pizarra-text-control hover:bg-pizarra-control-hover"
+            }`}
+          >
+            {isFullWindow ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Fullscreen className="h-3.5 w-3.5" />
+            )}
+            <span className="hidden sm:inline">
+              {isFullWindow ? "Salir" : "Ventana completa"}
+            </span>
           </button>
           <button
             type="button"
@@ -1037,7 +1110,11 @@ export function NetworkDiagram({
 
       {/* Avisos de colisión o proximidad */}
       {(rejectionReason || validation.warnings.length > 0) && (
-        <div className="no-print space-y-1.5 border-b border-pizarra-border bg-pizarra-surface px-3 py-2 text-xs">
+        <div
+          className={`no-print shrink-0 space-y-1.5 border-b border-pizarra-border bg-pizarra-surface px-3 py-2 text-xs ${
+            isFullWindow ? "max-h-28 overflow-y-auto" : ""
+          }`}
+        >
           {rejectionReason && (
             <p className="flex items-center gap-1.5 rounded-lg border border-status-error-border bg-status-error-bg px-2.5 py-1.5 font-semibold text-status-error-text">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-status-error-text" />
@@ -1056,7 +1133,14 @@ export function NetworkDiagram({
       )}
 
       {/* Lienzo SVG a escala */}
-      <div ref={canvasRef} className="relative h-[340px] w-full select-none bg-pizarra-surface sm:h-[480px]">
+      <div
+        ref={canvasRef}
+        className={
+          isFullWindow
+            ? "relative min-h-0 w-full flex-1 select-none bg-pizarra-surface"
+            : "relative h-[340px] w-full select-none bg-pizarra-surface sm:h-[480px]"
+        }
+      >
         <svg
           ref={svgRef}
           viewBox={viewBox}
@@ -2020,60 +2104,74 @@ export function NetworkDiagram({
       </div>
 
       {quickAddDraft && (
-        <QuickAddSegmentBar
-          draft={quickAddDraft}
-          conflictMessage={previewConflictMessage}
-          onChange={setQuickAddDraft}
-          onCancel={() => setQuickAddDraft(null)}
-          onConfirm={() => {
-            const totalCm = Math.max(
-              10,
-              Math.round(
-                (quickAddDraft.lengthMeters * 100 +
-                  quickAddDraft.lengthCmExtra) /
-                  10
-              ) * 10
-            );
-            const catalogSpec = APPLIANCE_CATALOG_TABLA_V.find(
-              (c) => c.id === quickAddDraft.catalogId
-            );
-            onQuickAddFromPoint({
-              fromPointId: quickAddDraft.fromPointId,
-              direction: quickAddDraft.direction,
-              lengthCm: totalCm,
-              nominalDiameter: quickAddDraft.nominalDiameter,
-              appliance: quickAddDraft.includeAppliance
-                ? {
-                    catalogId: quickAddDraft.catalogId,
-                    name: quickAddDraft.applianceName.trim() || "Artefacto",
-                    applianceClass: catalogSpec?.applianceClass ?? "otro",
-                    circuitType: catalogSpec?.defaultCircuitType ?? "A",
-                    powerMcalPerHour: Math.max(
-                      0.5,
-                      quickAddDraft.powerMcalPerHour || 8
-                    ),
-                    roomLengthMeters: Math.max(
-                      0.5,
-                      quickAddDraft.roomLengthMeters || 3.5
-                    ),
-                    roomWidthMeters: Math.max(
-                      0.5,
-                      quickAddDraft.roomWidthMeters || 3.0
-                    ),
-                    roomHeightMeters: Math.max(
-                      1,
-                      quickAddDraft.roomHeightMeters || 2.4
-                    ),
-                  }
-                : undefined,
-            });
-            setQuickAddDraft(null);
-          }}
-        />
+        <div
+          className={
+            isFullWindow
+              ? "no-print max-h-[45dvh] shrink-0 overflow-y-auto"
+              : "no-print"
+          }
+        >
+          <QuickAddSegmentBar
+            draft={quickAddDraft}
+            conflictMessage={previewConflictMessage}
+            onChange={setQuickAddDraft}
+            onCancel={() => setQuickAddDraft(null)}
+            onConfirm={() => {
+              const totalCm = Math.max(
+                10,
+                Math.round(
+                  (quickAddDraft.lengthMeters * 100 +
+                    quickAddDraft.lengthCmExtra) /
+                    10
+                ) * 10
+              );
+              const catalogSpec = APPLIANCE_CATALOG_TABLA_V.find(
+                (c) => c.id === quickAddDraft.catalogId
+              );
+              onQuickAddFromPoint({
+                fromPointId: quickAddDraft.fromPointId,
+                direction: quickAddDraft.direction,
+                lengthCm: totalCm,
+                nominalDiameter: quickAddDraft.nominalDiameter,
+                appliance: quickAddDraft.includeAppliance
+                  ? {
+                      catalogId: quickAddDraft.catalogId,
+                      name: quickAddDraft.applianceName.trim() || "Artefacto",
+                      applianceClass: catalogSpec?.applianceClass ?? "otro",
+                      circuitType: catalogSpec?.defaultCircuitType ?? "A",
+                      powerMcalPerHour: Math.max(
+                        0.5,
+                        quickAddDraft.powerMcalPerHour || 8
+                      ),
+                      roomLengthMeters: Math.max(
+                        0.5,
+                        quickAddDraft.roomLengthMeters || 3.5
+                      ),
+                      roomWidthMeters: Math.max(
+                        0.5,
+                        quickAddDraft.roomWidthMeters || 3.0
+                      ),
+                      roomHeightMeters: Math.max(
+                        1,
+                        quickAddDraft.roomHeightMeters || 2.4
+                      ),
+                    }
+                  : undefined,
+              });
+              setQuickAddDraft(null);
+            }}
+          />
+        </div>
       )}
 
       {editingAppliance && (
-        <div className="no-print">
+        <div
+          className={
+            isFullWindow
+              ? "no-print max-h-[45dvh] shrink-0 overflow-y-auto"
+              : "no-print"
+          }
+        >
           <RoomQuickEditor
             gasType={gasType}
             appliance={editingAppliance}
@@ -2089,8 +2187,8 @@ export function NetworkDiagram({
         </div>
       )}
 
-      <div className="no-print border-t border-pizarra-border bg-pizarra-secondary px-3 py-1.5 text-[11px] text-pizarra-subtext">
-        Toca un punto y su puerto (+) para ingresar medida, diámetro y recinto antes de generar · Mantén presionado cualquier nodo para moverlo manualmente en saltos de 10 cm (parpadea en verde mostrando el nuevo tamaño) · Rueda del ratón para hacer zoom.
+      <div className="no-print shrink-0 border-t border-pizarra-border bg-pizarra-secondary px-3 py-1.5 text-[11px] text-pizarra-subtext">
+        Toca un punto y su puerto (+) para ingresar medida, diámetro y recinto antes de generar · Mantén presionado cualquier nodo para moverlo manualmente en saltos de 10 cm (parpadea en verde mostrando el nuevo tamaño) · Rueda del ratón para hacer zoom{isFullWindow ? " · Esc para salir de ventana completa." : "."}
       </div>
     </div>
   );

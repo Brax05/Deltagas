@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AppHeader } from "@/components/workspace/AppHeader";
 import { ThemeToggle } from "@/components/workspace/ThemeToggle";
+import { FloatingAssistantWidget } from "@/components/chat/FloatingAssistantWidget";
 
 export const metadata: Metadata = {
   title: "DeltaGas — Apoyo al Cálculo de Redes de Gas (DS 66)",
@@ -32,6 +33,7 @@ export default function RootLayout({
         <main className="mx-auto w-full max-w-7xl px-3 pt-4 pb-20 sm:px-6">
           {children}
         </main>
+        <FloatingAssistantWidget />
         <ThemeToggle />
       </body>
     </html>
